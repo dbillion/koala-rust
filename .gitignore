@@ -1,4 +1,9 @@
 target/
+Cargo.lock
+*.orig
+*.swp
+.DS_Store
+.peabrain/
 *.db
 *.db-wal
 *.db-shm
