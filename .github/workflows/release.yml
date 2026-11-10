@@ -59,6 +59,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libsqlite3-dev clang
+          # For cross-compilation to ARM64
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
+          # For Windows cross-compilation
+          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
+            sudo apt-get install -y mingw-w64
+          fi
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -147,7 +155,19 @@ jobs:
           body: |
             ## koala-rust ${{ github.ref_name }}
 
-            Local, private, persistent memory for AI agents — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
+            **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
+
+            A single binary (49 MB) that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+
+            ### 🙏 Attribution
+
+            This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
+            - Real local embeddings (Candle + all-MiniLM-L6-v2)
+            - Vector search (sqlite-vec HNSW)
+            - CRDT-based multi-agent sync (VectorClock)
+            - WASM/native plugin marketplace (wasmtime + libloading)
+            - MCP server with 50 tools
+            - Cross-platform releases (Linux/macOS/Windows × x86_64/ARM64)
 
             ### Installation
 
