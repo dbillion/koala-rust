@@ -34,9 +34,12 @@ jobs:
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
       - run: |
+          # Exclude test file from doc build
+          mv test_load_wasm.rs test_load_wasm.rs.bak 2>/dev/null || true
           cargo doc --no-deps --document-private-items
           crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
           echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
+          mv test_load_wasm.rs.bak test_load_wasm.rs 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: api-docs
@@ -53,7 +56,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: |
           sudo apt-get update && sudo apt-get install -y pkg-config libsqlite3-dev clang
-      - run: cargo install deepwiki-rs --locked
+      - run: |
+          cargo install deepwiki-rs --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - run: |
           cat > litho.toml << 'EOF'
           [project]
