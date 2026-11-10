@@ -2,8 +2,14 @@
 name = "koala-rust"
 version = "0.2.0"
 edition = "2021"
-description = "Koala MCP Server in Rust - Persistent memory, vector search, multi-agent sync, embeddings, plugins"
+description = "Koala MCP Server in Rust - Persistent memory, vector search, multi-agent sync, plugins"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/dbillion/koala-rust"
+homepage = "https://github.com/dbillion/koala-rust"
+keywords = ["mcp", "memory", "sqlite", "crdt", "wasm", "plugins", "vector-search"]
+categories = ["command-line-utilities", "database", "embedded", "wasm"]
+readme = "README.md"
+include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugins/**/*"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -25,9 +31,9 @@ automerge = "0.3"
 automerge_repo = "0.1"
 
 # v0.4: Embeddings
-candle-core = { version = "0.8", features = ["mkl"] }
-candle-nn = "0.8"
-candle-transformers = "0.8"
+candle-core = { version = "0.8", default-features = false, features = [] }
+candle-nn = { version = "0.8", default-features = false }
+candle-transformers = { version = "0.8", default-features = false }
 tokenizers = "0.19"
 hf-hub = "0.5"
 
@@ -72,6 +78,7 @@ debug = true
 opt-level = "z"
 lto = "thin"
 
+# Binary
 [[bin]]
-name = "test_load_wasm"
-path = "test_load_wasm.rs"
+name = "koala-rust"
+path = "src/main.rs"
