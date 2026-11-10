@@ -5,6 +5,7 @@ pub mod vector;
 pub mod sync;
 pub mod embeddings;
 pub mod plugins;
+pub mod plugin_marketplace;
 
 use db::Database;
 use model::{NeuralModel, ModelState};
@@ -12,6 +13,7 @@ use vector::{VectorEngine, VectorConfig, VECTOR_DIM};
 use sync::SyncManager;
 use embeddings::{EmbeddingManager, EmbeddingConfig};
 use plugins::{PluginManager, WasmHost};
+use plugin_marketplace::PluginRegistry;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -25,6 +27,7 @@ pub struct Koala {
     pub sync_manager: Arc<SyncManager>,
     pub embedding_manager: Arc<EmbeddingManager>,
     pub plugin_manager: Arc<PluginManager>,
+    pub plugin_registry: Arc<PluginRegistry>,
 }
 
 impl Koala {
@@ -41,6 +44,9 @@ impl Koala {
         // Initialize embedding manager
         let embedding_config = EmbeddingConfig::default();
         let embedding_manager = Arc::new(EmbeddingManager::new(embedding_config));
+
+        // Initialize plugin registry
+        let plugin_registry = Arc::new(PluginRegistry::new(&state_dir).await?);
 
         // Initialize plugin manager
         let wasm_host = WasmHost::new()
@@ -60,6 +66,11 @@ impl Koala {
             state_dir.join("plugins/wasm"),
         )?);
 
+        // Auto-discover and load installed plugins
+        if let Err(e) = plugin_manager.discover_plugins().await {
+            tracing::warn!("Failed to discover plugins on startup: {}", e);
+        }
+
         Ok(Self {
             db,
             model: Arc::new(Mutex::new(None)),
@@ -67,6 +78,7 @@ impl Koala {
             sync_manager,
             embedding_manager,
             plugin_manager,
+            plugin_registry,
         })
     }
 
@@ -201,7 +213,7 @@ impl Koala {
     // v0.5: Plugin methods
     pub async fn load_plugin(&self, name: &str) -> Result<()> {
         if name.ends_with(".wasm") {
-            self.plugin_manager.load_wasm_plugin(name).await
+            self.plugin_manager.load_wasm_plugin(name, None, None).await
         } else {
             self.plugin_manager.load_native_plugin(name).await
         }
