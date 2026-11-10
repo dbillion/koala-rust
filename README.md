@@ -231,16 +231,16 @@ peabrain-rust plugin-call --name hash-tools --tool sha256 --input "hello"
 
 ## 📚 peabrain-mcp Skill (Usage Guide)
 
-A dedicated skill teaches agents how to use peabrain-rust effectively via MCP:
+A dedicated skill teaches agents how to use peabrain-rust effectively via MCP. **Included in this repo at `skills/peabrain-mcp/`.**
 
 ### Install Skill
 
 ```bash
-# Hermes
-hermes skill install peabrain-mcp
+# Hermes (from local repo)
+hermes skill install skills/peabrain-mcp
 
-# Or clone to skills dir
-git clone https://github.com/dbillion/peabrain-mcp-skill ~/.hermes/skills/peabrain-mcp
+# Or clone skill dir directly
+cp -r skills/peabrain-mcp ~/.hermes/skills/peabrain-mcp
 ```
 
 ### Skill Provides
@@ -340,7 +340,7 @@ cargo build --release
 # Binary at target/release/peabrain-rust (49 MB)
 ```
 
-### Cross-Platform Builds
+### Cross-Platform Builds (Local)
 
 ```bash
 # Install cross
@@ -364,13 +364,30 @@ cross build --release --target x86_64-pc-windows-gnu
 
 ### GitHub Actions (Auto on Tag)
 
-The repo includes `.github/workflows/release.yml` that builds all 6 targets on tag push:
+The repo includes **two workflows** in `.github/workflows/`:
 
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push/PR to master | Format, clippy, type-check, test, cross-platform check (5 targets) |
+| `release.yml` | Tag push (`v*`) | **Build 6 platform binaries + create GitHub Release** |
+
+**Release on tag push:**
 ```bash
 git tag v0.3.0
 git push origin v0.3.0
-# → Creates release with 6 binaries
+# → CI passes → release.yml builds all 6 targets → creates GitHub Release with binaries
 ```
+
+**Artifacts produced per release:**
+| Platform | Artifact Name |
+|----------|---------------|
+| Linux x86_64 | `peabrain-rust-x86_64-unknown-linux-gnu` |
+| Linux ARM64 | `peabrain-rust-aarch64-unknown-linux-gnu` |
+| macOS x86_64 (Intel) | `peabrain-rust-x86_64-apple-darwin` |
+| macOS ARM64 (Apple Silicon) | `peabrain-rust-aarch64-apple-darwin` |
+| Windows x86_64 | `peabrain-rust-x86_64-pc-windows-gnu.exe` |
+
+Each release includes `SHA256SUMS.txt` for verification.
 
 ---
 
@@ -486,7 +503,7 @@ MIT — see [LICENSE](LICENSE)
 ## 🔗 Related
 
 - **Hermes Plugin**: `peabrain-memory` (in `~/.hermes/plugins/peabrain-memory/`)
-- **peabrain-mcp Skill**: Usage guide for agents
+- **peabrain-mcp Skill**: `skills/peabrain-mcp/` in this repo
 - **MCP Spec**: https://modelcontextprotocol.io
 - **sqlite-vec**: https://github.com/asg017/sqlite-vec
 - **Candle**: https://github.com/huggingface/candle

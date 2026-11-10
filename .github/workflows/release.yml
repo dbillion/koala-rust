@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: peabrain-rust-x86_64-unknown-linux-gnu
+            rust_toolchain: stable
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: peabrain-rust-aarch64-unknown-linux-gnu
+            rust_toolchain: stable
+            cross: true
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: peabrain-rust-x86_64-apple-darwin
+            rust_toolchain: stable
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: peabrain-rust-aarch64-apple-darwin
+            rust_toolchain: stable
+          # Windows
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            artifact: peabrain-rust-x86_64-pc-windows-gnu.exe
+            rust_toolchain: stable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust_toolchain }}
+          target: ${{ matrix.target }}
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libsqlite3-dev clang
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install sqlite3 pkg-config
+
+      - name: Install cross (for cross-compilation)
+        if: matrix.cross == 'true'
+        run: cargo install cross --locked
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (native)
+        if: matrix.cross != 'true'
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          ls -la target/${{ matrix.target }}/release/
+
+      - name: Build (cross)
+        if: matrix.cross == 'true'
+        run: |
+          cross build --release --target ${{ matrix.target }}
+          ls -la target/${{ matrix.target }}/release/
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifacts
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cp target/${{ matrix.target }}/release/peabrain-rust.exe artifacts/${{ matrix.artifact }}
+          else
+            cp target/${{ matrix.target }}/release/peabrain-rust artifacts/${{ matrix.artifact }}
+          fi
+          # Verify binary works
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            ./artifacts/${{ matrix.artifact }} --help || true
+          else
+            chmod +x artifacts/${{ matrix.artifact }}
+            ./artifacts/${{ matrix.artifact }} --help || true
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifacts/${{ matrix.artifact }}
+          retention-days: 90
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: peabrain-rust-*
+          merge-multiple: true
+
+      - name: List assets
+        run: |
+          ls -la release-assets/
+          file release-assets/*
+
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: peabrain-rust ${{ github.ref_name }}
+          body: |
+            ## peabrain-rust ${{ github.ref_name }}
+
+            Local, private, persistent memory for AI agents — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
+
+            ### Installation
+
+            **Binary (recommended):**
+            ```bash
+            # Linux x86_64
+            curl -L https://github.com/dbillion/peabrain-rust/releases/download/${{ github.ref_name }}/peabrain-rust-x86_64-unknown-linux-gnu -o peabrain-rust
+            chmod +x peabrain-rust
+
+            # Linux ARM64
+            curl -L https://github.com/dbillion/peabrain-rust/releases/download/${{ github.ref_name }}/peabrain-rust-aarch64-unknown-linux-gnu -o peabrain-rust
+            chmod +x peabrain-rust
+
+            # macOS x86_64 (Intel)
+            curl -L https://github.com/dbillion/peabrain-rust/releases/download/${{ github.ref_name }}/peabrain-rust-x86_64-apple-darwin -o peabrain-rust
+            chmod +x peabrain-rust
+
+            # macOS ARM64 (Apple Silicon)
+            curl -L https://github.com/dbillion/peabrain-rust/releases/download/${{ github.ref_name }}/peabrain-rust-aarch64-apple-darwin -o peabrain-rust
+            chmod +x peabrain-rust
+
+            # Windows x86_64
+            curl -L https://github.com/dbillion/peabrain-rust/releases/download/${{ github.ref_name }}/peabrain-rust-x86_64-pc-windows-gnu.exe -o peabrain-rust.exe
+            ```
+
+            **Via Cargo:**
+            ```bash
+            cargo install --git https://github.com/dbillion/peabrain-rust --tag ${{ github.ref_name }}
+            ```
+
+            ### Quick Start
+            ```bash
+            export PEABRAIN_STATE_DIR=~/.peabrain
+            ./peabrain-rust --serve
+            ```
+
+            ### Verify Downloads
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ### What's New
+            See [CHANGELOG](https://github.com/dbillion/peabrain-rust/blob/master/CHANGELOG.md) (if exists) or commit history.
+
+          files: |
+            release-assets/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-cargo:
+    name: Publish to crates.io (optional)
+    needs: release
+    runs-on: ubuntu-latest
+    if: false  # Set to true and add CARGO_REGISTRY_TOKEN secret to enable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
