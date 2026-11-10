@@ -75,6 +75,17 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
+      - name: Install system dependencies for cross-compilation
+        if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-gnu'
+        run: |
+          sudo apt-get update
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
+          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
+            sudo apt-get install -y mingw-w64
+          fi
+
       - name: Install cross
         run: cargo install cross --locked
 
