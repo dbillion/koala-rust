@@ -20,36 +20,24 @@ jobs:
     name: Build API Reference
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: [rustfmt, clippy]
-
-      - name: Install system dependencies
-        run: |
-          sudo -S -p '' apt-get update
-          sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
-
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - run: |
+          sudo -S -p '' apt-get update && sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build API docs
-        run: |
+      - run: |
           cargo doc --no-deps --document-private-items
           crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
-          echo "<meta http-equiv=\"refresh\" content=\"0; url=$crate_name/\">" > target/doc/index.html
-
-      - name: Upload API docs artifact
-        uses: actions/upload-artifact@v4
+          echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
+      - uses: actions/upload-artifact@v4
         with:
           name: api-docs
           path: target/doc
@@ -59,37 +47,24 @@ jobs:
     name: Build Architecture Docs (Litho)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install system dependencies
-        run: |
-          sudo -S -p '' apt-get update
-          sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
-
-      - name: Install Litho (deepwiki-rs)
-        run: cargo install deepwiki-rs --locked
-
-      - name: Configure Litho
-        run: |
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sudo apt-get update && sudo apt-get install -y pkg-config libsqlite3-dev clang
+      - run: cargo install deepwiki-rs --locked
+      - run: |
           cat > litho.toml << 'EOF'
           [project]
           name = "peabrain-rust"
           root = "."
-          
           [output]
           dir = "docs/architecture"
           format = "markdown"
-          
           [analysis]
           include_patterns = ["src/**/*.rs"]
           exclude_patterns = ["target/**", "tests/**", "examples/**", "plugins/**"]
-          
           [diagrams]
           c4_context = true
           c4_container = true
@@ -97,20 +72,14 @@ jobs:
           c4_code = true
           mermaid = true
           max_depth = 3
-          
           [llm]
           provider = "local"
           model = "code-analysis"
           EOF
-
-      - name: Generate architecture documentation
-        run: |
+      - run: |
           litho generate
           ls -la docs/architecture/
-          find docs/architecture -name "*.md" | head -20
-
-      - name: Upload architecture docs artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: architecture-docs
           path: docs/architecture
@@ -120,59 +89,26 @@ jobs:
     name: Build User Guides (mdBook)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v2
+      - uses: actions/checkout@v4
+      - uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: "latest"
-
-      - name: Initialize mdBook (if not exists)
-        run: |
+      - run: |
           if [ ! -f "book.toml" ]; then
             mdbook init --title "peabrain-rust Documentation" .
           fi
-
-      - name: Create mdBook content structure
-        run: |
+      - run: |
           mkdir -p src
-          
           if [ ! -f "src/SUMMARY.md" ]; then
             printf "%s\n" \
               "# Summary" \
               "" \
               "- [Introduction](README.md)" \
               "- [Quick Start](quickstart.md)" \
-              "- [Architecture](architecture.md)" \
-              "- [CLI Reference](cli.md)" \
-              "- [MCP Tools](mcp-tools.md)" \
-              "- [Vector Search](vector-search.md)" \
-              "- [CRDT Sync](crdt-sync.md)" \
-              "- [Embeddings](embeddings.md)" \
-              "- [Plugin System](plugins.md)" \
-              "  - [WASM Plugins](plugins/wasm.md)" \
-              "  - [Native Plugins](plugins/native.md)" \
-              "  - [Marketplace](plugins/marketplace.md)" \
-              "- [Hermes Integration](hermes.md)" \
-              "- [Building from Source](building.md)" \
-              "- [Cross-Platform Builds](cross-platform.md)" \
-              "- [Contributing](contributing.md)" \
               > src/SUMMARY.md
           fi
-
-          for chapter in quickstart architecture cli mcp-tools vector-search crdt-sync embeddings plugins/wasm plugins/native plugins/marketplace hermes building cross-platform contributing; do
-            if [ ! -f "src/${chapter}.md" ]; then
-              title=$(echo "$chapter" | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
-              printf "%s\n\n%s\n" "# $title" "*Content to be added. See [README.md](../README.md) for now.*" > "src/${chapter}.md"
-            fi
-          done
-
-      - name: Build mdBook
-        run: mdbook build
-
-      - name: Upload mdBook artifact
-        uses: actions/upload-artifact@v4
+      - run: mdbook build
+      - uses: actions/upload-artifact@v4
         with:
           name: mdbook-docs
           path: book
@@ -187,26 +123,19 @@ jobs:
       name: github-pages
       url: https://dbillion.github.io/peabrain-rust/
     steps:
-      - name: Download API docs
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: api-docs
           path: deploy/api
-
-      - name: Download architecture docs
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: architecture-docs
           path: deploy/architecture
-
-      - name: Download mdBook
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: mdbook-docs
           path: deploy/book
-
-      - name: Prepare combined site
-        run: |
+      - run: |
           mkdir -p deploy/site
           cp -r deploy/book/* deploy/site/
           mkdir -p deploy/site/api
@@ -228,16 +157,8 @@ jobs:
               "</html>" \
               > deploy/site/index.html
           fi
-          find deploy/site -type f | head -30
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: deploy/site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v4
