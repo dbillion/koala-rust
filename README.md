@@ -22,6 +22,86 @@
 
 ---
 
+## 🏛️ Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Agent["AI Agent (Claude, Hermes, Custom)"]
+        direction TB
+        MCP_CLIENT[MCP Client]
+    end
+
+    subgraph Server["koala-rust MCP Server (stdio)"]
+        direction TB
+        MCP_HANDLER[MCP Handler 50 tools]
+        
+        subgraph Core["Core Services"]
+            FACTS[Fact Store<br/>SQLite + versions]
+            ENTITIES[Entity Graph<br/>Observations + Relations]
+            TASKS[Task Manager<br/>CRUD + Queries]
+            NEURAL[Neural Model<br/>Online Learning]
+        end
+        
+        subgraph Vector["Vector Engine"]
+            SQLITE_VEC[(sqlite-vec HNSW)]
+            EMBEDDINGS[Candle + all-MiniLM-L6-v2]
+        end
+        
+        subgraph Sync["CRDT Sync"]
+            VECTOR_CLOCK[VectorClock<br/>Last-Write-Wins]
+            PEER_SYNC[Peer Sync Protocol]
+        end
+        
+        subgraph Plugins["Plugin System"]
+            WASM_RUNTIME[wasmtime<br/>WASM Sandbox]
+            NATIVE_LOADER[libloading<br/>Native Plugins]
+            MARKETPLACE[Plugin Registry<br/>SHA256 Verify]
+        end
+    end
+
+    subgraph Storage["Local Storage (~/.koala)"]
+        KOALA_DB[(koala.db)]
+        MODEL_DIR[model/]
+        PLUGIN_DIR[plugins/<br/>wasm/ + native/]
+        REGISTRY[registry.json]
+    end
+
+    MCP_CLIENT <-->|JSON-RPC 2.0<br/>stdio| MCP_HANDLER
+    MCP_HANDLER --> FACTS
+    MCP_HANDLER --> ENTITIES
+    MCP_HANDLER --> TASKS
+    MCP_HANDLER --> NEURAL
+    MCP_HANDLER --> Vector
+    MCP_HANDLER --> Sync
+    MCP_HANDLER --> Plugins
+    
+    FACTS --> KOALA_DB
+    ENTITIES --> KOALA_DB
+    TASKS --> KOALA_DB
+    NEURAL --> MODEL_DIR
+    Vector --> SQLITE_VEC
+    Vector --> EMBEDDINGS
+    Sync --> VECTOR_CLOCK
+    Sync --> PEER_SYNC
+    Plugins --> WASM_RUNTIME
+    Plugins --> NATIVE_LOADER
+    Plugins --> MARKETPLACE
+    Plugins --> PLUGIN_DIR
+    MARKETPLACE --> REGISTRY
+    
+    SQLITE_VEC --> KOALA_DB
+    EMBEDDINGS -->|~90 MB| MODEL_DIR
+
+    style Agent fill:#e3f2fd
+    style Server fill:#fff3e0
+    style Storage fill:#e8f5e9
+    style Vector fill:#fce4ec
+    style Sync fill:#f3e5f5
+    style Plugins fill:#fff8e1
+```
+
+---
+
 ## 🚀 Quick Start
 
 ### Install (Binary)
@@ -72,6 +152,23 @@ mcp_servers:
 ```
 
 **Custom Client** — connect via stdio JSON-RPC 2.0.
+
+---
+
+## 🎯 10 Key Business Use Cases
+
+| # | Use Case | Value |
+|---|----------|-------|
+| **1** | **Institutional Knowledge Retention** | Never lose technical decisions, debugging context, or tribal knowledge when team members leave. Semantic search finds "why we chose X" instantly. |
+| **2** | **Multi-Agent Collaboration** | Research, coding, and review agents share a synchronized fact base via CRDT — no conflicting states, no manual handoffs. |
+| **3** | **Compliance & Audit Trail** | Versioned facts + timestamps = immutable record of decisions. Export for SOC2, GDPR, or internal audits. |
+| **4** | **Cross-Session Continuity** | Agents resume exactly where they left off — context, tasks, learned patterns persist across restarts, days, machines. |
+| **5** | **Private AI Memory (Air-Gapped)** | 100% local, no API keys, no cloud. Runs in secure environments, regulated industries, offline deployments. |
+| **6** | **Plugin-Driven Workflow Automation** | Install WASM plugins for custom transformers (hash, JSON, text, domain-specific). Extend without recompiling. |
+| **7** | **Semantic Search over Conversations** | "What did we decide about auth last month?" → vector search returns relevant turns, not keyword matches. |
+| **8** | **Knowledge Graph for Domain Modeling** | Entities + observations + relations = queryable domain model. "Show all services depending on PostgreSQL." |
+| **9** | **Task Handoff Between Agents** | Structured tasks with state, priority, assignee. Agent A creates, Agent B picks up, Agent C reviews — all tracked. |
+| **10** | **Embedding-Powered RAG Without Cloud** | Local embeddings + vector search = full RAG pipeline on-device. Zero marginal cost per query. |
 
 ---
 
@@ -132,6 +229,43 @@ koala-rust plugin-call --name hash-tools --tool sha256 --input "hello"
 
 ---
 
+## 📚 koala-mcp Skill (Usage Guide)
+
+A dedicated skill teaches agents how to use koala-rust effectively via MCP:
+
+### Install Skill
+
+```bash
+# Hermes
+hermes skill install koala-mcp
+
+# Or clone to skills dir
+git clone https://github.com/dbillion/koala-mcp-skill ~/.hermes/skills/koala-mcp
+```
+
+### Skill Provides
+
+| Capability | Description |
+|------------|-------------|
+| **Tool Reference** | All 50 MCP tools with parameters, examples, error handling |
+| **Workflow Patterns** | Common patterns: fact extraction → embed → upsert → search |
+| **Best Practices** | When to use facts vs entities vs tasks, naming conventions |
+| **Integration Recipes** | Claude Desktop, Hermes, custom MCP clients |
+| **Troubleshooting** | Common errors, performance tuning, debugging tips |
+
+### Example Skill Usage (Agent)
+
+```
+# Agent reads skill, then:
+koala_recall("authentication architecture decision")
+# → Returns relevant facts with scores
+
+koala_write_fact("api:rate_limit", "100 req/min per IP")
+# → Stores with auto-embedding for future recall
+```
+
+---
+
 ## 🧠 Auto-Conversation Memory (Hermes)
 
 The **koala-memory** Hermes plugin captures every conversation turn, extracts facts, generates embeddings, and enables semantic recall.
@@ -177,31 +311,6 @@ After restart, agents get 3 tools:
 2. `on_session_end` → extracts facts, embeds via `embed_text`, stores via `write_fact`, upserts vectors via `vector_upsert_fact`
 3. Background thread → non-blocking async processing
 4. `koala_recall("vector search config")` → returns relevant past conversations
-
----
-
-## 🔧 Architecture
-
-```
-koala-rust (single binary)
-├── SQLite + sqlite-vec (HNSW)
-├── Candle + all-MiniLM-L6-v2 (embeddings)
-├── VectorClock CRDT (sync)
-├── wasmtime (WASM plugins)
-├── libloading (native plugins)
-└── MCP stdio server (50 tools)
-```
-
-**Data Directory** (`KOALA_STATE_DIR`):
-```
-~/.koala/
-├── koala.db          # SQLite (facts, entities, tasks, vectors)
-├── model/               # Neural model checkpoints
-├── plugins/
-│   ├── wasm/            # Installed WASM plugins
-│   └── native/          # Installed native plugins
-└── registry.json        # Plugin marketplace index
-```
 
 ---
 
@@ -377,6 +486,7 @@ MIT — see [LICENSE](LICENSE)
 ## 🔗 Related
 
 - **Hermes Plugin**: `koala-memory` (in `~/.hermes/plugins/koala-memory/`)
+- **koala-mcp Skill**: Usage guide for agents
 - **MCP Spec**: https://modelcontextprotocol.io
 - **sqlite-vec**: https://github.com/asg017/sqlite-vec
 - **Candle**: https://github.com/huggingface/candle
