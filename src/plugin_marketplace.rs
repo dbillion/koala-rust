@@ -1,7 +1,6 @@
 //! Plugin marketplace for discovering, installing, and managing WASM/native plugins.
 
-use crate::plugins::{PluginManager, PluginType, PluginManifest, ToolDefinition};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::Client;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -52,6 +51,7 @@ impl PluginIndex {
 pub struct PluginRegistry {
     index: Arc<RwLock<PluginIndex>>,
     index_path: PathBuf,
+    #[allow(dead_code)]
     install_dir: PathBuf,
     wasm_module_dir: PathBuf,
     native_module_dir: PathBuf,
@@ -152,15 +152,21 @@ impl PluginRegistry {
     }
 
     /// Install a plugin from the registry
-    pub async fn install(&self, name: &str, version: Option<&str>) -> Result<PathBuf> {
+    pub async fn install(&self, name: &str, _version: Option<&str>) -> Result<PathBuf> {
         let plugin = {
             let index = self.index.read().await;
-            index.plugins.get(name).cloned()
+            index
+                .plugins
+                .get(name)
+                .cloned()
                 .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found in registry", name))?
         };
 
         // Check if already installed
-        let wasm_name = plugin.download_url.strip_prefix("builtin://").unwrap_or(&plugin.name);
+        let wasm_name = plugin
+            .download_url
+            .strip_prefix("builtin://")
+            .unwrap_or(&plugin.name);
         let wasm_filename = if wasm_name.ends_with(".wasm") {
             wasm_name.to_string()
         } else {
@@ -186,7 +192,9 @@ impl PluginRegistry {
             if actual_sha256 != *expected_sha256 {
                 return Err(anyhow::anyhow!(
                     "SHA256 mismatch for plugin '{}': expected {}, got {}",
-                    name, expected_sha256, actual_sha256
+                    name,
+                    expected_sha256,
+                    actual_sha256
                 ));
             }
         }
@@ -202,7 +210,7 @@ impl PluginRegistry {
     pub async fn uninstall(&self, name: &str) -> Result<()> {
         let wasm_filename = format!("{}.wasm", name);
         let install_path = self.wasm_module_dir.join(&wasm_filename);
-        
+
         if install_path.exists() {
             std::fs::remove_file(&install_path)?;
             info!("Uninstalled plugin '{}'", name);
@@ -214,22 +222,27 @@ impl PluginRegistry {
 
     /// Update the registry from a remote source
     pub async fn update_registry(&self, registry_url: Option<&str>) -> Result<usize> {
-        let url = registry_url.unwrap_or("https://raw.githubusercontent.com/dbillion/peabrain-plugins/main/registry.json");
-        
+        let url = registry_url.unwrap_or(
+            "https://raw.githubusercontent.com/dbillion/peabrain-plugins/main/registry.json",
+        );
+
         let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch registry: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch registry: {}",
+                response.status()
+            ));
         }
-        
+
         let new_plugins: Vec<PluginRegistryEntry> = response.json().await?;
         let count = new_plugins.len();
-        
+
         let mut index = self.index.write().await;
         for plugin in new_plugins {
             index.plugins.insert(plugin.name.clone(), plugin);
         }
         index.save(&self.index_path)?;
-        
+
         info!("Updated registry with {} plugins", count);
         Ok(count)
     }
@@ -241,7 +254,7 @@ impl PluginRegistry {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().map_or(false, |ext| ext == "wasm"))
             .count();
-        
+
         Ok(serde_json::json!({
             "total_plugins": index.plugins.len(),
             "installed_plugins": installed,
@@ -261,141 +274,35 @@ impl PluginRegistry {
     async fn download_wasm(&self, url: &str) -> Result<Vec<u8>> {
         let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to download plugin: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to download plugin: {}",
+                response.status()
+            ));
         }
         Ok(response.bytes().await?.to_vec())
     }
 
     /// Generate a builtin WASM plugin (use pre-compiled WASM from build time)
-        async fn generate_builtin_wasm(&self, name: &str) -> Result<Vec<u8>> {
-            let wasm_bytes = match name {
-                "hash-tools" => HASH_TOOLS_WASM,
-                "text-transform" => TEXT_TRANSFORM_WASM,
-                "json-tools" => JSON_TOOLS_WASM,
-                _ => return Err(anyhow::anyhow!("Unknown builtin plugin: {}", name)),
-            };
+    async fn generate_builtin_wasm(&self, name: &str) -> Result<Vec<u8>> {
+        let wasm_bytes = match name {
+            "hash-tools" => HASH_TOOLS_WASM,
+            "text-transform" => TEXT_TRANSFORM_WASM,
+            "json-tools" => JSON_TOOLS_WASM,
+            _ => return Err(anyhow::anyhow!("Unknown builtin plugin: {}", name)),
+        };
 
-            Ok(wasm_bytes.to_vec())
-        }
+        Ok(wasm_bytes.to_vec())
+    }
 
-        /// Get builtin plugin manifest JSON
-            pub fn get_builtin_manifest(&self, name: &str) -> serde_json::Value {
-            match name {
-                "hash-tools" => json!({
-                    "name": "hash-tools",
-                    "version": "1.0.0",
-                    "description": "Cryptographic hash functions (MD5, SHA1, SHA256, SHA512)",
-                    "author": "peabrain",
-                    "tools": [{
-                        "name": "hash",
-                        "description": "Compute hash of input text",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {
-                                "algorithm": {"type": "string", "enum": ["md5", "sha1", "sha256", "sha512"]},
-                                "text": {"type": "string"}
-                            },
-                            "required": ["algorithm", "text"]
-                        },
-                        "output_schema": {
-                            "type": "object",
-                            "properties": {"hash": {"type": "string"}},
-                            "required": ["hash"]
-                        },
-                        "is_async": false
-                    }],
-                    "requires": [],
-                    "permissions": {
-                        "network": false, "filesystem_read": false, "filesystem_write": false,
-                        "database_read": false, "database_write": false, "model_access": false,
-                        "max_execution_time_ms": 5000, "max_memory_mb": 10
-                    }
-                }),
-                "text-transform" => json!({
-                    "name": "text-transform",
-                    "version": "1.0.0",
-                    "description": "Text transformation utilities (uppercase, lowercase, reverse, base64_encode, base64_decode)",
-                    "author": "peabrain",
-                    "tools": [{
-                        "name": "transform",
-                        "description": "Transform text (uppercase, lowercase, reverse, base64_encode, base64_decode)",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {
-                                "operation": {"type": "string", "enum": ["uppercase", "lowercase", "reverse", "base64_encode", "base64_decode"]},
-                                "text": {"type": "string"}
-                            },
-                            "required": ["operation", "text"]
-                        },
-                        "output_schema": {
-                            "type": "object",
-                            "properties": {"result": {"type": "string"}},
-                            "required": ["result"]
-                        },
-                        "is_async": false
-                    }],
-                    "requires": [],
-                    "permissions": {
-                        "network": false, "filesystem_read": false, "filesystem_write": false,
-                        "database_read": false, "database_write": false, "model_access": false,
-                        "max_execution_time_ms": 5000, "max_memory_mb": 10
-                    }
-                }),
-                "json-tools" => json!({
-                    "name": "json-tools",
-                    "version": "1.0.0",
-                    "description": "JSON manipulation tools (query, transform, validate)",
-                    "author": "peabrain",
-                    "tools": [{
-                        "name": "json_query",
-                        "description": "Query JSON using JSONPath-like syntax",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {
-                                "json": {"type": "string"},
-                                "path": {"type": "string"}
-                            },
-                            "required": ["json", "path"]
-                        },
-                        "output_schema": {
-                            "type": "object",
-                            "properties": {"result": {}},
-                            "required": ["result"]
-                        },
-                        "is_async": false
-                    }, {
-                        "name": "json_pretty",
-                        "description": "Pretty-print JSON with indentation",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {
-                                "json": {"type": "string"},
-                                "indent": {"type": "integer", "default": 2}
-                            },
-                            "required": ["json"]
-                        },
-                        "output_schema": {
-                            "type": "object",
-                            "properties": {"result": {"type": "string"}},
-                            "required": ["result"]
-                        },
-                        "is_async": false
-                    }],
-                    "requires": [],
-                    "permissions": {
-                        "network": false, "filesystem_read": false, "filesystem_write": false,
-                        "database_read": false, "database_write": false, "model_access": false,
-                        "max_execution_time_ms": 5000, "max_memory_mb": 10
-                    }
-                }),
-                _ => json!({}),
-            }
-        }
-
-        /// Get builtin plugin tools JSON
-            pub fn get_builtin_tools(&self, name: &str) -> serde_json::Value {
-            match name {
-                "hash-tools" => json!([{
+    /// Get builtin plugin manifest JSON
+    pub fn get_builtin_manifest(&self, name: &str) -> serde_json::Value {
+        match name {
+            "hash-tools" => json!({
+                "name": "hash-tools",
+                "version": "1.0.0",
+                "description": "Cryptographic hash functions (MD5, SHA1, SHA256, SHA512)",
+                "author": "peabrain",
+                "tools": [{
                     "name": "hash",
                     "description": "Compute hash of input text",
                     "input_schema": {
@@ -412,8 +319,20 @@ impl PluginRegistry {
                         "required": ["hash"]
                     },
                     "is_async": false
-                }]),
-                "text-transform" => json!([{
+                }],
+                "requires": [],
+                "permissions": {
+                    "network": false, "filesystem_read": false, "filesystem_write": false,
+                    "database_read": false, "database_write": false, "model_access": false,
+                    "max_execution_time_ms": 5000, "max_memory_mb": 10
+                }
+            }),
+            "text-transform" => json!({
+                "name": "text-transform",
+                "version": "1.0.0",
+                "description": "Text transformation utilities (uppercase, lowercase, reverse, base64_encode, base64_decode)",
+                "author": "peabrain",
+                "tools": [{
                     "name": "transform",
                     "description": "Transform text (uppercase, lowercase, reverse, base64_encode, base64_decode)",
                     "input_schema": {
@@ -430,8 +349,20 @@ impl PluginRegistry {
                         "required": ["result"]
                     },
                     "is_async": false
-                }]),
-                "json-tools" => json!([{
+                }],
+                "requires": [],
+                "permissions": {
+                    "network": false, "filesystem_read": false, "filesystem_write": false,
+                    "database_read": false, "database_write": false, "model_access": false,
+                    "max_execution_time_ms": 5000, "max_memory_mb": 10
+                }
+            }),
+            "json-tools" => json!({
+                "name": "json-tools",
+                "version": "1.0.0",
+                "description": "JSON manipulation tools (query, transform, validate)",
+                "author": "peabrain",
+                "tools": [{
                     "name": "json_query",
                     "description": "Query JSON using JSONPath-like syntax",
                     "input_schema": {
@@ -465,10 +396,95 @@ impl PluginRegistry {
                         "required": ["result"]
                     },
                     "is_async": false
-                }]),
-                _ => json!([]),
-            }
+                }],
+                "requires": [],
+                "permissions": {
+                    "network": false, "filesystem_read": false, "filesystem_write": false,
+                    "database_read": false, "database_write": false, "model_access": false,
+                    "max_execution_time_ms": 5000, "max_memory_mb": 10
+                }
+            }),
+            _ => json!({}),
         }
+    }
+
+    /// Get builtin plugin tools JSON
+    pub fn get_builtin_tools(&self, name: &str) -> serde_json::Value {
+        match name {
+            "hash-tools" => json!([{
+                "name": "hash",
+                "description": "Compute hash of input text",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "algorithm": {"type": "string", "enum": ["md5", "sha1", "sha256", "sha512"]},
+                        "text": {"type": "string"}
+                    },
+                    "required": ["algorithm", "text"]
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"hash": {"type": "string"}},
+                    "required": ["hash"]
+                },
+                "is_async": false
+            }]),
+            "text-transform" => json!([{
+                "name": "transform",
+                "description": "Transform text (uppercase, lowercase, reverse, base64_encode, base64_decode)",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {"type": "string", "enum": ["uppercase", "lowercase", "reverse", "base64_encode", "base64_decode"]},
+                        "text": {"type": "string"}
+                    },
+                    "required": ["operation", "text"]
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"result": {"type": "string"}},
+                    "required": ["result"]
+                },
+                "is_async": false
+            }]),
+            "json-tools" => json!([{
+                "name": "json_query",
+                "description": "Query JSON using JSONPath-like syntax",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "json": {"type": "string"},
+                        "path": {"type": "string"}
+                    },
+                    "required": ["json", "path"]
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"result": {}},
+                    "required": ["result"]
+                },
+                "is_async": false
+            }, {
+                "name": "json_pretty",
+                "description": "Pretty-print JSON with indentation",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "json": {"type": "string"},
+                        "indent": {"type": "integer", "default": 2}
+                    },
+                    "required": ["json"]
+                },
+                "output_schema": {
+                    "type": "object",
+                    "properties": {"result": {"type": "string"}},
+                    "required": ["result"]
+                },
+                "is_async": false
+            }]),
+            _ => json!([]),
+        }
+    }
 
     /// Compute SHA256 hash
     fn compute_sha256(&self, data: &[u8]) -> String {

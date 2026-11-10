@@ -1,11 +1,11 @@
 use anyhow::Result;
+use base64::Engine;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::io::stdin;
 
-use crate::{PeaBrain, db, model, vector, sync, embeddings, plugins};
+use crate::{sync, PeaBrain};
 
 pub struct PeaBrainServer {
     brain: Arc<Mutex<PeaBrain>>,
@@ -43,7 +43,7 @@ impl PeaBrainServer {
                     "code": -32601,
                     "message": e.to_string()
                 }
-            })
+            }),
         }
     }
 
@@ -58,7 +58,12 @@ impl PeaBrainServer {
     async fn handle_list_tools(&self) -> Result<Value> {
         use serde_json::Map;
 
-        fn tool(name: &str, desc: &str, props: Map<String, Value>, required: Option<Vec<&str>>) -> Value {
+        fn tool(
+            name: &str,
+            desc: &str,
+            props: Map<String, Value>,
+            required: Option<Vec<&str>>,
+        ) -> Value {
             let mut schema = Map::new();
             schema.insert("type".to_string(), json!("object"));
             schema.insert("properties".to_string(), json!(props));
@@ -72,283 +77,543 @@ impl PeaBrainServer {
             json!(t)
         }
 
-        let mut props = Map::new();
+        let _props = Map::new();
         let tools = vec![
             // Core tools
             tool("health", "Database diagnostics", Map::new(), None),
-            tool("write_fact", "Write a fact", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("text".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name", "text"])),
-            tool("read_fact", "Read a fact", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
+            tool(
+                "write_fact",
+                "Write a fact",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("text".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name", "text"]),
+            ),
+            tool(
+                "read_fact",
+                "Read a fact",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
             tool("list_facts", "List facts", Map::new(), None),
-            tool("read_fact_versions", "Fact versions", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("limit".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["name"])),
-            tool("delete_fact", "Delete fact", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
-            tool("delete_fact_prefix", "Delete facts by prefix", {
-                let mut p = Map::new();
-                p.insert("prefix".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["prefix"])),
-            tool("create_entities", "Create entity", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("type".to_string(), json!({"type": "string"}));
-                p.insert("project".to_string(), json!({"type": "string"}));
-                p.insert("observations".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["name"])),
-            tool("add_observations", "Add observations", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("observations".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["name", "observations"])),
-            tool("open_nodes", "Open entities", {
-                let mut p = Map::new();
-                p.insert("names".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["names"])),
-            tool("search_nodes", "Search nodes", {
-                let mut p = Map::new();
-                p.insert("query".to_string(), json!({"type": "string"}));
-                p.insert("limit".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["query"])),
-            tool("create_relations", "Create relation", {
-                let mut p = Map::new();
-                p.insert("from".to_string(), json!({"type": "string"}));
-                p.insert("to".to_string(), json!({"type": "string"}));
-                p.insert("type".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["from", "to", "type"])),
-            tool("create_task_or_note", "Create task", {
-                let mut p = Map::new();
-                p.insert("title".to_string(), json!({"type": "string"}));
-                p.insert("body".to_string(), json!({"type": "string"}));
-                p.insert("status".to_string(), json!({"type": "string"}));
-                p.insert("project".to_string(), json!({"type": "string"}));
-                p.insert("priority".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["title"])),
-            tool("query_tasks", "Query tasks", {
-                let mut p = Map::new();
-                p.insert("status".to_string(), json!({"type": "string"}));
-                p.insert("project".to_string(), json!({"type": "string"}));
-                p.insert("search".to_string(), json!({"type": "string"}));
-                p.insert("limit".to_string(), json!({"type": "integer"}));
-                p
-            }, None),
-            tool("update_task", "Update task", {
-                let mut p = Map::new();
-                p.insert("id".to_string(), json!({"type": "integer"}));
-                p.insert("title".to_string(), json!({"type": "string"}));
-                p.insert("body".to_string(), json!({"type": "string"}));
-                p.insert("status".to_string(), json!({"type": "string"}));
-                p.insert("project".to_string(), json!({"type": "string"}));
-                p.insert("priority".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["id"])),
-            tool("model_init", "Init model", {
-                let mut p = Map::new();
-                p.insert("hidden".to_string(), json!({"type": "integer"}));
-                p.insert("lr".to_string(), json!({"type": "number"}));
-                p.insert("activation".to_string(), json!({"type": "string"}));
-                p
-            }, None),
-            tool("model_train", "Train model", {
-                let mut p = Map::new();
-                p.insert("xs".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("ys".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("targets".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("lr".to_string(), json!({"type": "number"}));
-                p.insert("steps".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["xs", "ys", "targets"])),
-            tool("model_predict", "Predict", {
-                let mut p = Map::new();
-                p.insert("xs".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("ys".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p
-            }, Some(vec!["xs", "ys"])),
+            tool(
+                "read_fact_versions",
+                "Fact versions",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("limit".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "delete_fact",
+                "Delete fact",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "delete_fact_prefix",
+                "Delete facts by prefix",
+                {
+                    let mut p = Map::new();
+                    p.insert("prefix".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["prefix"]),
+            ),
+            tool(
+                "create_entities",
+                "Create entity",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("type".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert(
+                        "observations".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "add_observations",
+                "Add observations",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert(
+                        "observations".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["name", "observations"]),
+            ),
+            tool(
+                "open_nodes",
+                "Open entities",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "names".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["names"]),
+            ),
+            tool(
+                "search_nodes",
+                "Search nodes",
+                {
+                    let mut p = Map::new();
+                    p.insert("query".to_string(), json!({"type": "string"}));
+                    p.insert("limit".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["query"]),
+            ),
+            tool(
+                "create_relations",
+                "Create relation",
+                {
+                    let mut p = Map::new();
+                    p.insert("from".to_string(), json!({"type": "string"}));
+                    p.insert("to".to_string(), json!({"type": "string"}));
+                    p.insert("type".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["from", "to", "type"]),
+            ),
+            tool(
+                "create_task_or_note",
+                "Create task",
+                {
+                    let mut p = Map::new();
+                    p.insert("title".to_string(), json!({"type": "string"}));
+                    p.insert("body".to_string(), json!({"type": "string"}));
+                    p.insert("status".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("priority".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["title"]),
+            ),
+            tool(
+                "query_tasks",
+                "Query tasks",
+                {
+                    let mut p = Map::new();
+                    p.insert("status".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("search".to_string(), json!({"type": "string"}));
+                    p.insert("limit".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                None,
+            ),
+            tool(
+                "update_task",
+                "Update task",
+                {
+                    let mut p = Map::new();
+                    p.insert("id".to_string(), json!({"type": "integer"}));
+                    p.insert("title".to_string(), json!({"type": "string"}));
+                    p.insert("body".to_string(), json!({"type": "string"}));
+                    p.insert("status".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("priority".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["id"]),
+            ),
+            tool(
+                "model_init",
+                "Init model",
+                {
+                    let mut p = Map::new();
+                    p.insert("hidden".to_string(), json!({"type": "integer"}));
+                    p.insert("lr".to_string(), json!({"type": "number"}));
+                    p.insert("activation".to_string(), json!({"type": "string"}));
+                    p
+                },
+                None,
+            ),
+            tool(
+                "model_train",
+                "Train model",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "xs".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert(
+                        "ys".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert(
+                        "targets".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert("lr".to_string(), json!({"type": "number"}));
+                    p.insert("steps".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["xs", "ys", "targets"]),
+            ),
+            tool(
+                "model_predict",
+                "Predict",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "xs".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert(
+                        "ys".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p
+                },
+                Some(vec!["xs", "ys"]),
+            ),
             tool("model_status", "Model status", Map::new(), None),
-            tool("feedback", "Feedback", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("signal".to_string(), json!({"type": "string"}));
-                p.insert("kind".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name", "signal", "kind"])),
-            tool("explain_rank", "Explain rank", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("kind".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
-            tool("sequential_thinking", "Sequential thinking", {
-                let mut p = Map::new();
-                p.insert("step".to_string(), json!({"type": "integer"}));
-                p.insert("thought".to_string(), json!({"type": "string"}));
-                p.insert("next_step".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["step", "thought", "next_step"])),
-            tool("conclusion", "Add conclusion", {
-                let mut p = Map::new();
-                p.insert("summary".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["summary"])),
-            tool("thought_history", "Get thought history", {
-                let mut p = Map::new();
-                p.insert("limit".to_string(), json!({"type": "integer"}));
-                p
-            }, None),
+            tool(
+                "feedback",
+                "Feedback",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("signal".to_string(), json!({"type": "string"}));
+                    p.insert("kind".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name", "signal", "kind"]),
+            ),
+            tool(
+                "explain_rank",
+                "Explain rank",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("kind".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "sequential_thinking",
+                "Sequential thinking",
+                {
+                    let mut p = Map::new();
+                    p.insert("step".to_string(), json!({"type": "integer"}));
+                    p.insert("thought".to_string(), json!({"type": "string"}));
+                    p.insert("next_step".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["step", "thought", "next_step"]),
+            ),
+            tool(
+                "conclusion",
+                "Add conclusion",
+                {
+                    let mut p = Map::new();
+                    p.insert("summary".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["summary"]),
+            ),
+            tool(
+                "thought_history",
+                "Get thought history",
+                {
+                    let mut p = Map::new();
+                    p.insert("limit".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                None,
+            ),
             tool("thought_reset", "Reset thought history", Map::new(), None),
-            tool("model_save", "Save model", {
-                let mut p = Map::new();
-                p.insert("step".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["step"])),
-            tool("model_load", "Load model", {
-                let mut p = Map::new();
-                p.insert("step".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["step"])),
-
+            tool(
+                "model_save",
+                "Save model",
+                {
+                    let mut p = Map::new();
+                    p.insert("step".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["step"]),
+            ),
+            tool(
+                "model_load",
+                "Load model",
+                {
+                    let mut p = Map::new();
+                    p.insert("step".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["step"]),
+            ),
             // v0.2: Vector Search tools
-            tool("vector_upsert_fact", "Upsert fact embedding", {
-                let mut p = Map::new();
-                p.insert("fact_id".to_string(), json!({"type": "integer"}));
-                p.insert("embedding".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p
-            }, Some(vec!["fact_id", "embedding"])),
-            tool("vector_upsert_entity", "Upsert entity embedding", {
-                let mut p = Map::new();
-                p.insert("entity_id".to_string(), json!({"type": "integer"}));
-                p.insert("embedding".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p
-            }, Some(vec!["entity_id", "embedding"])),
-            tool("vector_search_facts", "Search facts by vector similarity", {
-                let mut p = Map::new();
-                p.insert("query_embedding".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("k".to_string(), json!({"type": "integer"}));
-                p.insert("filter".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["query_embedding", "k"])),
-            tool("vector_search_entities", "Search entities by vector similarity", {
-                let mut p = Map::new();
-                p.insert("query_embedding".to_string(), json!({"type": "array", "items": {"type": "number"}}));
-                p.insert("k".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["query_embedding", "k"])),
-            tool("vector_delete_fact", "Delete fact embedding", {
-                let mut p = Map::new();
-                p.insert("fact_id".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["fact_id"])),
-            tool("vector_delete_entity", "Delete entity embedding", {
-                let mut p = Map::new();
-                p.insert("entity_id".to_string(), json!({"type": "integer"}));
-                p
-            }, Some(vec!["entity_id"])),
-
+            tool(
+                "vector_upsert_fact",
+                "Upsert fact embedding",
+                {
+                    let mut p = Map::new();
+                    p.insert("fact_id".to_string(), json!({"type": "integer"}));
+                    p.insert(
+                        "embedding".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p
+                },
+                Some(vec!["fact_id", "embedding"]),
+            ),
+            tool(
+                "vector_upsert_entity",
+                "Upsert entity embedding",
+                {
+                    let mut p = Map::new();
+                    p.insert("entity_id".to_string(), json!({"type": "integer"}));
+                    p.insert(
+                        "embedding".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p
+                },
+                Some(vec!["entity_id", "embedding"]),
+            ),
+            tool(
+                "vector_search_facts",
+                "Search facts by vector similarity",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "query_embedding".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert("k".to_string(), json!({"type": "integer"}));
+                    p.insert("filter".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["query_embedding", "k"]),
+            ),
+            tool(
+                "vector_search_entities",
+                "Search entities by vector similarity",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "query_embedding".to_string(),
+                        json!({"type": "array", "items": {"type": "number"}}),
+                    );
+                    p.insert("k".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["query_embedding", "k"]),
+            ),
+            tool(
+                "vector_delete_fact",
+                "Delete fact embedding",
+                {
+                    let mut p = Map::new();
+                    p.insert("fact_id".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["fact_id"]),
+            ),
+            tool(
+                "vector_delete_entity",
+                "Delete entity embedding",
+                {
+                    let mut p = Map::new();
+                    p.insert("entity_id".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["entity_id"]),
+            ),
             // v0.3: Sync tools
-            tool("sync_write_fact", "Write fact with CRDT sync", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("text".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name", "text"])),
-            tool("sync_read_fact", "Read fact from sync", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
+            tool(
+                "sync_write_fact",
+                "Write fact with CRDT sync",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("text".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name", "text"]),
+            ),
+            tool(
+                "sync_read_fact",
+                "Read fact from sync",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
             tool("sync_list_facts", "List facts from sync", Map::new(), None),
-            tool("sync_create_entity", "Create entity with CRDT sync", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("type".to_string(), json!({"type": "string"}));
-                p.insert("project".to_string(), json!({"type": "string"}));
-                p.insert("observations".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["name"])),
-            tool("sync_get_changes", "Get pending sync changes", {
-                let mut p = Map::new();
-                p.insert("doc_type".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["doc_type"])),
-            tool("sync_merge_changes", "Merge changes from peer", {
-                let mut p = Map::new();
-                p.insert("doc_type".to_string(), json!({"type": "string"}));
-                p.insert("changes".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["doc_type", "changes"])),
-
+            tool(
+                "sync_create_entity",
+                "Create entity with CRDT sync",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("type".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert(
+                        "observations".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "sync_get_changes",
+                "Get pending sync changes",
+                {
+                    let mut p = Map::new();
+                    p.insert("doc_type".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["doc_type"]),
+            ),
+            tool(
+                "sync_merge_changes",
+                "Merge changes from peer",
+                {
+                    let mut p = Map::new();
+                    p.insert("doc_type".to_string(), json!({"type": "string"}));
+                    p.insert(
+                        "changes".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["doc_type", "changes"]),
+            ),
             // v0.4: Embedding tools
-            tool("embed_text", "Generate embedding for text", {
-                let mut p = Map::new();
-                p.insert("text".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["text"])),
-            tool("embed_batch", "Generate embeddings for multiple texts", {
-                let mut p = Map::new();
-                p.insert("texts".to_string(), json!({"type": "array", "items": {"type": "string"}}));
-                p
-            }, Some(vec!["texts"])),
-
+            tool(
+                "embed_text",
+                "Generate embedding for text",
+                {
+                    let mut p = Map::new();
+                    p.insert("text".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["text"]),
+            ),
+            tool(
+                "embed_batch",
+                "Generate embeddings for multiple texts",
+                {
+                    let mut p = Map::new();
+                    p.insert(
+                        "texts".to_string(),
+                        json!({"type": "array", "items": {"type": "string"}}),
+                    );
+                    p
+                },
+                Some(vec!["texts"]),
+            ),
             // v0.5: Plugin tools
-            tool("plugin_load", "Load a plugin", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
-            tool("plugin_call", "Call a plugin tool", {
-                let mut p = Map::new();
-                p.insert("plugin".to_string(), json!({"type": "string"}));
-                p.insert("tool".to_string(), json!({"type": "string"}));
-                p.insert("args".to_string(), json!({"type": "object"}));
-                p
-            }, Some(vec!["plugin", "tool", "args"])),
+            tool(
+                "plugin_load",
+                "Load a plugin",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "plugin_call",
+                "Call a plugin tool",
+                {
+                    let mut p = Map::new();
+                    p.insert("plugin".to_string(), json!({"type": "string"}));
+                    p.insert("tool".to_string(), json!({"type": "string"}));
+                    p.insert("args".to_string(), json!({"type": "object"}));
+                    p
+                },
+                Some(vec!["plugin", "tool", "args"]),
+            ),
             tool("plugin_list", "List loaded plugins", Map::new(), None),
-            tool("plugin_discover", "Discover and load plugins from directories", Map::new(), None),
-
+            tool(
+                "plugin_discover",
+                "Discover and load plugins from directories",
+                Map::new(),
+                None,
+            ),
             // v0.5: Plugin marketplace tools
-            tool("plugin_search", "Search plugins in registry", {
-                let mut p = Map::new();
-                p.insert("query".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["query"])),
-            tool("plugin_install", "Install a plugin from registry", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p.insert("version".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
-            tool("plugin_uninstall", "Uninstall a plugin", {
-                let mut p = Map::new();
-                p.insert("name".to_string(), json!({"type": "string"}));
-                p
-            }, Some(vec!["name"])),
-            tool("plugin_registry_stats", "Get registry statistics", Map::new(), None),
-            tool("plugin_update_registry", "Update registry from remote", {
-                let mut p = Map::new();
-                p.insert("url".to_string(), json!({"type": "string"}));
-                p
-            }, None),
+            tool(
+                "plugin_search",
+                "Search plugins in registry",
+                {
+                    let mut p = Map::new();
+                    p.insert("query".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["query"]),
+            ),
+            tool(
+                "plugin_install",
+                "Install a plugin from registry",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("version".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "plugin_uninstall",
+                "Uninstall a plugin",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name"]),
+            ),
+            tool(
+                "plugin_registry_stats",
+                "Get registry statistics",
+                Map::new(),
+                None,
+            ),
+            tool(
+                "plugin_update_registry",
+                "Update registry from remote",
+                {
+                    let mut p = Map::new();
+                    p.insert("url".to_string(), json!({"type": "string"}));
+                    p
+                },
+                None,
+            ),
         ];
         Ok(json!({"tools": tools}))
     }
@@ -433,7 +698,7 @@ impl PeaBrainServer {
 
     // Core handlers
     async fn handle_write_fact(&self, args: Value) -> Result<Value> {
-        let mut brain = self.brain.lock().await;
+        let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
         let text = args["text"].as_str().unwrap();
         let rowid = brain.db.write_fact(name, text).await?;
@@ -444,7 +709,8 @@ impl PeaBrainServer {
         let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
         let fact = brain.db.read_fact(name).await?;
-        Ok(fact.map(|(rowid, text)| json!({"rowid": rowid, "name": name, "body": text}))
+        Ok(fact
+            .map(|(rowid, text)| json!({"rowid": rowid, "name": name, "body": text}))
             .unwrap_or_else(|| json!({"error": "not found"})))
     }
 
@@ -481,27 +747,43 @@ impl PeaBrainServer {
         let name = args["name"].as_str().unwrap();
         let type_ = args.get("type").and_then(|v| v.as_str());
         let project = args.get("project").and_then(|v| v.as_str());
-        let observations = args.get("observations")
+        let observations = args
+            .get("observations")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
             .unwrap_or_default();
-        let rowid = brain.db.create_entity(name, type_, project, &observations).await?;
+        let rowid = brain
+            .db
+            .create_entity(name, type_, project, &observations)
+            .await?;
         Ok(json!({"rowid": rowid, "name": name, "created": true}))
     }
 
     async fn handle_add_observations(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
-        let observations = args["observations"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>();
+        let observations = args["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>();
         let added = brain.db.add_observations(name, &observations).await?;
         Ok(json!({"rowid": added, "name": name, "added": added}))
     }
 
     async fn handle_open_nodes(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let names = args["names"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>();
+        let names = args["names"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<String>>();
         let nodes = brain.db.open_nodes(&names).await?;
         Ok(json!({"nodes": nodes}))
     }
@@ -527,10 +809,19 @@ impl PeaBrainServer {
         let brain = self.brain.lock().await;
         let title = args["title"].as_str().unwrap();
         let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
-        let status = args.get("status").and_then(|v| v.as_str()).unwrap_or("not_started");
+        let status = args
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("not_started");
         let project = args.get("project").and_then(|v| v.as_str()).unwrap_or("");
-        let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
-        let rowid = brain.db.create_task(title, body, status, project, priority).await?;
+        let priority = args
+            .get("priority")
+            .and_then(|v| v.as_str())
+            .unwrap_or("medium");
+        let rowid = brain
+            .db
+            .create_task(title, body, status, project, priority)
+            .await?;
         Ok(json!({"id": rowid, "title": title, "status": status}))
     }
 
@@ -552,7 +843,10 @@ impl PeaBrainServer {
         let status = args.get("status").and_then(|v| v.as_str());
         let project = args.get("project").and_then(|v| v.as_str());
         let priority = args.get("priority").and_then(|v| v.as_str());
-        let updated = brain.db.update_task(id, title, body, status, project, priority).await?;
+        let updated = brain
+            .db
+            .update_task(id, title, body, status, project, priority)
+            .await?;
         Ok(json!({"updated": updated}))
     }
 
@@ -560,20 +854,40 @@ impl PeaBrainServer {
         let mut brain = self.brain.lock().await;
         let hidden = args.get("hidden").and_then(|v| v.as_u64()).unwrap_or(16) as usize;
         let lr = args.get("lr").and_then(|v| v.as_f64()).unwrap_or(0.01) as f32;
-        let activation = args.get("activation").and_then(|v| v.as_str()).unwrap_or("leaky");
+        let activation = args
+            .get("activation")
+            .and_then(|v| v.as_str())
+            .unwrap_or("leaky");
         brain.init_model(hidden, lr, activation).await?;
         Ok(json!({"ok": true, "hidden": hidden, "activation": activation, "step": 0}))
     }
 
     async fn handle_model_train(&self, args: Value) -> Result<Value> {
-        let mut brain = self.brain.lock().await;
+        let brain = self.brain.lock().await;
         let model = brain.model.lock().await;
         let mut model_guard = model;
-        let model_ref = model_guard.as_mut().ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;
+        let model_ref = model_guard
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;
 
-        let xs: Vec<f32> = args["xs"].as_array().unwrap().iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect::<Vec<f32>>();
-                let ys: Vec<f32> = args["ys"].as_array().unwrap().iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect::<Vec<f32>>();
-                let targets: Vec<f32> = args["targets"].as_array().unwrap().iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect::<Vec<f32>>();
+        let xs: Vec<f32> = args["xs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect::<Vec<f32>>();
+        let ys: Vec<f32> = args["ys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect::<Vec<f32>>();
+        let targets: Vec<f32> = args["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect::<Vec<f32>>();
         let lr = args.get("lr").and_then(|v| v.as_f64()).map(|x| x as f32);
         let steps = args.get("steps").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
 
@@ -588,10 +902,22 @@ impl PeaBrainServer {
     async fn handle_model_predict(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let model = brain.model.lock().await;
-        let model_ref = model.as_ref().ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;
+        let model_ref = model
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;
 
-        let xs: Vec<f32> = args["xs"].as_array().unwrap().iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect();
-        let ys: Vec<f32> = args["ys"].as_array().unwrap().iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect();
+        let xs: Vec<f32> = args["xs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect();
+        let ys: Vec<f32> = args["ys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect();
         let values = model_ref.predict(&xs, &ys);
         Ok(json!({"ok": true, "values": values}))
     }
@@ -666,7 +992,8 @@ impl PeaBrainServer {
     async fn handle_thought_history(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(100);
-        let thoughts: Vec<(i64, i64, String, chrono::DateTime<chrono::Utc>)> = brain.db.get_thoughts(limit).await?;
+        let thoughts: Vec<(i64, i64, String, chrono::DateTime<chrono::Utc>)> =
+            brain.db.get_thoughts(limit).await?;
         Ok(json!({"thoughts": thoughts}))
     }
 
@@ -679,7 +1006,9 @@ impl PeaBrainServer {
     async fn handle_model_save(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let model = brain.model.lock().await;
-        let model_ref = model.as_ref().ok_or_else(|| anyhow::anyhow!("no model loaded"))?;
+        let model_ref = model
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no model loaded"))?;
         let step = args["step"].as_i64().unwrap();
         let state = model_ref.to_state();
         let state_json = serde_json::to_string(&state)?;
@@ -708,8 +1037,12 @@ impl PeaBrainServer {
     async fn handle_vector_upsert_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let fact_id = args["fact_id"].as_i64().unwrap();
-        let embedding: Vec<f32> = args["embedding"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect();
+        let embedding: Vec<f32> = args["embedding"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect();
         brain.vector_upsert_fact(fact_id, &embedding).await?;
         Ok(json!({"ok": true}))
     }
@@ -717,26 +1050,40 @@ impl PeaBrainServer {
     async fn handle_vector_upsert_entity(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let entity_id = args["entity_id"].as_i64().unwrap();
-        let embedding: Vec<f32> = args["embedding"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect();
+        let embedding: Vec<f32> = args["embedding"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect();
         brain.vector_upsert_entity(entity_id, &embedding).await?;
         Ok(json!({"ok": true}))
     }
 
     async fn handle_vector_search_facts(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let query_embedding: Vec<f32> = args["query_embedding"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect::<Vec<f32>>();
+        let query_embedding: Vec<f32> = args["query_embedding"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect::<Vec<f32>>();
         let k = args["k"].as_u64().unwrap() as usize;
         let filter = args.get("filter").and_then(|v| v.as_str());
-        let results = brain.vector_search_facts(&query_embedding, k, filter).await?;
+        let results = brain
+            .vector_search_facts(&query_embedding, k, filter)
+            .await?;
         Ok(json!({"results": results}))
     }
 
     async fn handle_vector_search_entities(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let query_embedding: Vec<f32> = args["query_embedding"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_f64().map(|x| x as f32)).collect::<Vec<f32>>();
+        let query_embedding: Vec<f32> = args["query_embedding"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_f64().map(|x| x as f32))
+            .collect::<Vec<f32>>();
         let k = args["k"].as_u64().unwrap() as usize;
         let results = brain.vector_search_entities(&query_embedding, k).await?;
         Ok(json!({"results": results}))
@@ -769,7 +1116,8 @@ impl PeaBrainServer {
         let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
         let fact = brain.sync_read_fact(name).await?;
-        Ok(fact.map(|(id, text)| json!({"id": id, "text": text}))
+        Ok(fact
+            .map(|(id, text)| json!({"id": id, "text": text}))
             .unwrap_or_else(|| json!({"error": "not found"})))
     }
 
@@ -784,11 +1132,18 @@ impl PeaBrainServer {
         let name = args["name"].as_str().unwrap();
         let type_ = args.get("type").and_then(|v| v.as_str());
         let project = args.get("project").and_then(|v| v.as_str());
-        let observations = args.get("observations")
+        let observations = args
+            .get("observations")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<String>>())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
             .unwrap_or_default();
-        let id = brain.sync_create_entity(name, type_, project, &observations).await?;
+        let id = brain
+            .sync_create_entity(name, type_, project, &observations)
+            .await?;
         Ok(json!({"ok": true, "id": id}))
     }
 
@@ -805,7 +1160,10 @@ impl PeaBrainServer {
             _ => return Err(anyhow::anyhow!("Invalid doc_type: {}", doc_type_str)),
         };
         let changes = brain.sync_get_changes(doc_type).await?;
-        let changes_b64: Vec<String> = changes.iter().map(|c| base64::encode(c)).collect();
+        let changes_b64: Vec<String> = changes
+            .iter()
+            .map(|c| base64::engine::general_purpose::STANDARD.encode(c))
+            .collect();
         Ok(json!({"changes": changes_b64}))
     }
 
@@ -821,9 +1179,17 @@ impl PeaBrainServer {
             "model" => sync::SyncDocType::Model,
             _ => return Err(anyhow::anyhow!("Invalid doc_type: {}", doc_type_str)),
         };
-        let changes_b64: Vec<String> = args["changes"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect();
-        let changes: Vec<Vec<u8>> = changes_b64.iter().filter_map(|s| base64::decode(s).ok()).collect();
+        let changes_b64: Vec<String> = args["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.to_string())
+            .collect();
+        let changes: Vec<Vec<u8>> = changes_b64
+            .iter()
+            .filter_map(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+            .collect();
         brain.sync_merge_changes(doc_type, &changes).await?;
         Ok(json!({"ok": true}))
     }
@@ -838,8 +1204,12 @@ impl PeaBrainServer {
 
     async fn handle_embed_batch(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let texts: Vec<&str> = args["texts"].as_array().unwrap()
-            .iter().filter_map(|v| v.as_str()).collect();
+        let texts: Vec<&str> = args["texts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         let embeddings = brain.embed_batch(&texts).await?;
         Ok(json!({"embeddings": embeddings}))
     }
@@ -892,7 +1262,10 @@ impl PeaBrainServer {
         let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or(name);
         // Strip .wasm extension for registry lookup
         let plugin_name = filename.strip_suffix(".wasm").unwrap_or(filename);
-        brain.plugin_manager.load_builtin_plugin(plugin_name, &brain.plugin_registry).await?;
+        brain
+            .plugin_manager
+            .load_builtin_plugin(plugin_name, &brain.plugin_registry)
+            .await?;
         Ok(json!({"ok": true, "path": path.display().to_string()}))
     }
 
@@ -901,7 +1274,7 @@ impl PeaBrainServer {
         let name = args["name"].as_str().unwrap();
         brain.plugin_registry.uninstall(name).await?;
         // Also unload from plugin manager
-        brain.plugin_manager.unload_plugin(name).await;
+        let _ = brain.plugin_manager.unload_plugin(name).await;
         Ok(json!({"ok": true}))
     }
 
@@ -920,7 +1293,9 @@ impl PeaBrainServer {
 }
 
 pub async fn run_stdio(brain: PeaBrain) -> Result<()> {
-    let server = Arc::new(PeaBrainServer { brain: Arc::new(Mutex::new(brain)) });
+    let server = Arc::new(PeaBrainServer {
+        brain: Arc::new(Mutex::new(brain)),
+    });
     let stdin = tokio::io::stdin();
     let mut reader = tokio::io::BufReader::new(stdin);
     let mut stdout = tokio::io::stdout();

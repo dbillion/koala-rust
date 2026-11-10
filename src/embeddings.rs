@@ -1,5 +1,5 @@
 //! Embeddings Module (v0.4) - Simplified Implementation
-//! 
+//!
 //! Provides local embedding generation using a simple hash-based approach
 //! for testing, with stub for Candle integration.
 
@@ -36,20 +36,20 @@ pub const EMBEDDING_DIM: usize = 384;
 fn hash_embed(text: &str) -> Vec<f32> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     let hash = hasher.finish();
-    
+
     // Generate deterministic pseudo-random embeddings from hash
     let mut embedding = vec![0.0f32; EMBEDDING_DIM];
     let mut state = hash as u64;
-    
+
     for i in 0..EMBEDDING_DIM {
         state = state.wrapping_mul(1103515245).wrapping_add(12345);
         embedding[i] = ((state >> 16) & 0x7FFF) as f32 / 32767.0 * 2.0 - 1.0;
     }
-    
+
     // Normalize
     let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
     if norm > 0.0 {
@@ -57,7 +57,7 @@ fn hash_embed(text: &str) -> Vec<f32> {
             *x /= norm;
         }
     }
-    
+
     embedding
 }
 
@@ -106,12 +106,12 @@ impl EmbeddingManager {
     /// Embed batch with caching
     pub async fn embed_batch_cached(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         let mut results = Vec::with_capacity(texts.len());
-        
+
         for text in texts {
             let embedding = self.embed_cached(text).await?;
             results.push(embedding);
         }
-        
+
         Ok(results)
     }
 
@@ -133,7 +133,10 @@ pub struct RagPipeline {
 }
 
 impl RagPipeline {
-    pub fn new(embedding_manager: Arc<EmbeddingManager>, vector_engine: Arc<crate::vector::VectorEngine>) -> Self {
+    pub fn new(
+        embedding_manager: Arc<EmbeddingManager>,
+        vector_engine: Arc<crate::vector::VectorEngine>,
+    ) -> Self {
         Self {
             embedding_manager,
             vector_engine,
@@ -141,22 +144,42 @@ impl RagPipeline {
     }
 
     /// Add document to RAG index
-    pub async fn add_document(&self, doc_id: i64, text: &str, metadata: serde_json::Value) -> Result<()> {
+    pub async fn add_document(
+        &self,
+        doc_id: i64,
+        text: &str,
+        _metadata: serde_json::Value,
+    ) -> Result<()> {
         let embedding = self.embedding_manager.embed_cached(text).await?;
-        self.vector_engine.upsert_fact_embedding(doc_id, &embedding).await?;
+        self.vector_engine
+            .upsert_fact_embedding(doc_id, &embedding)
+            .await?;
         Ok(())
     }
 
     /// Search relevant documents
-    pub async fn search(&self, query: &str, k: usize) -> Result<Vec<crate::vector::VectorSearchResult>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        k: usize,
+    ) -> Result<Vec<crate::vector::VectorSearchResult>> {
         let query_embedding = self.embedding_manager.embed_cached(query).await?;
-        self.vector_engine.search_facts(&query_embedding, k, None).await
+        self.vector_engine
+            .search_facts(&query_embedding, k, None)
+            .await
     }
 
     /// Hybrid search: vector + keyword
-    pub async fn hybrid_search(&self, query: &str, k: usize, keyword_filter: Option<&str>) -> Result<Vec<crate::vector::VectorSearchResult>> {
+    pub async fn hybrid_search(
+        &self,
+        query: &str,
+        k: usize,
+        keyword_filter: Option<&str>,
+    ) -> Result<Vec<crate::vector::VectorSearchResult>> {
         let query_embedding = self.embedding_manager.embed_cached(query).await?;
-        self.vector_engine.search_facts(&query_embedding, k, keyword_filter).await
+        self.vector_engine
+            .search_facts(&query_embedding, k, keyword_filter)
+            .await
     }
 }
 
@@ -168,14 +191,14 @@ mod tests {
     async fn test_embedding_manager() {
         let config = EmbeddingConfig::default();
         let manager = EmbeddingManager::new(config);
-        
+
         let emb = manager.embed_cached("test").await.unwrap();
         assert_eq!(emb.len(), EMBEDDING_DIM);
-        
+
         // Same text should give same embedding
         let emb2 = manager.embed_cached("test").await.unwrap();
         assert_eq!(emb, emb2);
-        
+
         // Different text should give different embedding
         let emb3 = manager.embed_cached("different").await.unwrap();
         assert_ne!(emb, emb3);
@@ -185,10 +208,10 @@ mod tests {
     async fn test_embed_batch() {
         let config = EmbeddingConfig::default();
         let manager = EmbeddingManager::new(config);
-        
+
         let texts = vec!["hello", "world", "test"];
         let embeddings = manager.embed_batch_cached(&texts).await.unwrap();
-        
+
         assert_eq!(embeddings.len(), 3);
         for emb in embeddings {
             assert_eq!(emb.len(), EMBEDDING_DIM);

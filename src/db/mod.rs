@@ -1,8 +1,6 @@
 use anyhow::Result;
-use sqlx::{sqlite::SqlitePoolOptions, sqlite::SqliteConnection, SqlitePool, Row, Connection, sqlite::SqliteConnectOptions};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
-use serde_json::Value;
+use sqlx::{sqlite::SqliteConnectOptions, Row, SqlitePool};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -66,27 +64,28 @@ impl Database {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         // Get absolute path manually
         let abs_path = if path.is_absolute() {
             path.to_path_buf()
         } else {
             std::env::current_dir()?.join(path)
         };
-        
+
         // Create pool with sqlite-vec extension loaded on every connection
         let db_url = format!("sqlite://{}?mode=rwc", abs_path.display());
-        let connect_opts = SqliteConnectOptions::from_str(&db_url)?
-            .extension("/usr/local/lib/vec0.so");
+        let connect_opts =
+            SqliteConnectOptions::from_str(&db_url)?.extension("/usr/local/lib/vec0.so");
         let pool = SqlitePool::connect_with(connect_opts).await?;
-        
+
         let db = Self { pool };
         db.migrate().await?;
         Ok(db)
     }
 
     async fn migrate(&self) -> Result<()> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS facts (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -94,16 +93,24 @@ impl Database {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 is_current BOOLEAN DEFAULT 1
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS facts_tombstone (
                 name TEXT PRIMARY KEY,
                 deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS entities (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
@@ -111,9 +118,13 @@ impl Database {
                 project TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS observations (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 entity_name TEXT NOT NULL,
@@ -121,9 +132,13 @@ impl Database {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (entity_name) REFERENCES entities(name) ON DELETE CASCADE
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS relations (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 from_entity TEXT NOT NULL,
@@ -133,9 +148,13 @@ impl Database {
                 FOREIGN KEY (from_entity) REFERENCES entities(name) ON DELETE CASCADE,
                 FOREIGN KEY (to_entity) REFERENCES entities(name) ON DELETE CASCADE
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS tasks (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -146,9 +165,13 @@ impl Database {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS model_weights (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 step INTEGER NOT NULL,
@@ -157,48 +180,68 @@ impl Database {
                 optimizer_json TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS thoughts (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 step INTEGER NOT NULL,
                 thought TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS conclusions (
                 rowid INTEGER PRIMARY KEY AUTOINCREMENT,
                 summary TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS rank_signals (
                 name TEXT PRIMARY KEY,
                 signal_type TEXT NOT NULL,
                 value REAL NOT NULL,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // v0.2: Vector embedding tables (managed by sqlite-vec extension)
         // These are virtual tables created by vector engine
-        
+
         // v0.3: Sync metadata tables
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS sync_peers (
                 peer_id TEXT PRIMARY KEY,
                 last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
                 doc_type TEXT NOT NULL,
                 heads_json TEXT NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS sync_changes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 peer_id TEXT NOT NULL,
@@ -206,10 +249,14 @@ impl Database {
                 change_bytes BLOB NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // v0.4: Embedding metadata
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS embedding_metadata (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_type TEXT NOT NULL, -- 'fact' | 'entity'
@@ -218,10 +265,14 @@ impl Database {
                 dimension INTEGER NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         // v0.5: Plugin metadata
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS plugin_registry (
                 name TEXT PRIMARY KEY,
                 version TEXT NOT NULL,
@@ -231,7 +282,10 @@ impl Database {
                 enabled BOOLEAN DEFAULT 1,
                 loaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         sqlx::query(r#"
             CREATE INDEX IF NOT EXISTS idx_facts_name ON facts(name);
@@ -249,16 +303,20 @@ impl Database {
     // ===== FACTS =====
     pub async fn write_fact(&self, name: &str, text: &str) -> Result<i64> {
         let mut tx = self.pool.begin().await?;
-        
+
         sqlx::query("UPDATE facts SET is_current = 0 WHERE name = ? AND is_current = 1")
             .bind(name)
-            .execute(&mut *tx).await?;
-        
-        let row = sqlx::query("INSERT INTO facts (name, text, is_current) VALUES (?, ?, 1) RETURNING rowid")
-            .bind(name)
-            .bind(text)
-            .fetch_one(&mut *tx).await?;
-        
+            .execute(&mut *tx)
+            .await?;
+
+        let row = sqlx::query(
+            "INSERT INTO facts (name, text, is_current) VALUES (?, ?, 1) RETURNING rowid",
+        )
+        .bind(name)
+        .bind(text)
+        .fetch_one(&mut *tx)
+        .await?;
+
         tx.commit().await?;
         Ok(row.get("rowid"))
     }
@@ -266,23 +324,39 @@ impl Database {
     pub async fn read_fact(&self, name: &str) -> Result<Option<(i64, String)>> {
         let row = sqlx::query("SELECT rowid, text FROM facts WHERE name = ? AND is_current = 1")
             .bind(name)
-            .fetch_optional(&self.pool).await?;
-        
+            .fetch_optional(&self.pool)
+            .await?;
+
         Ok(row.map(|r| (r.get("rowid"), r.get("text"))))
     }
 
-    pub async fn read_fact_versions(&self, name: &str, limit: i64) -> Result<Vec<(i64, String, DateTime<Utc>, bool)>> {
+    pub async fn read_fact_versions(
+        &self,
+        name: &str,
+        limit: i64,
+    ) -> Result<Vec<(i64, String, DateTime<Utc>, bool)>> {
         let rows = sqlx::query("SELECT rowid, text, created_at, is_current FROM facts WHERE name = ? ORDER BY created_at DESC LIMIT ?")
             .bind(name)
             .bind(limit)
             .fetch_all(&self.pool).await?;
-        
-        Ok(rows.into_iter().map(|r| (r.get("rowid"), r.get("text"), r.get("created_at"), r.get("is_current"))).collect())
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.get("rowid"),
+                    r.get("text"),
+                    r.get("created_at"),
+                    r.get("is_current"),
+                )
+            })
+            .collect())
     }
 
     pub async fn list_facts(&self) -> Result<Vec<String>> {
         let rows = sqlx::query("SELECT name FROM facts WHERE is_current = 1 ORDER BY name")
-            .fetch_all(&self.pool).await?;
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.into_iter().map(|r| r.get("name")).collect())
     }
 
@@ -290,12 +364,15 @@ impl Database {
         let mut tx = self.pool.begin().await?;
         let deleted = sqlx::query("DELETE FROM facts WHERE name = ? AND is_current = 1")
             .bind(name)
-            .execute(&mut *tx).await?.rows_affected();
-        
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
         if deleted > 0 {
             sqlx::query("INSERT OR IGNORE INTO facts_tombstone (name) VALUES (?)")
                 .bind(name)
-                .execute(&mut *tx).await?;
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(deleted > 0)
@@ -303,41 +380,55 @@ impl Database {
 
     pub async fn delete_fact_prefix(&self, prefix: &str) -> Result<i64> {
         let mut tx = self.pool.begin().await?;
-        let names: Vec<String> = sqlx::query("SELECT name FROM facts WHERE name LIKE ? AND is_current = 1")
-            .bind(format!("{}%", prefix))
-            .fetch_all(&mut *tx).await?
-            .into_iter()
-            .map(|r| r.get("name"))
-            .collect();
-        
+        let names: Vec<String> =
+            sqlx::query("SELECT name FROM facts WHERE name LIKE ? AND is_current = 1")
+                .bind(format!("{}%", prefix))
+                .fetch_all(&mut *tx)
+                .await?
+                .into_iter()
+                .map(|r| r.get("name"))
+                .collect();
+
         let count = names.len() as i64;
         for name in names {
             sqlx::query("UPDATE facts SET is_current = 0 WHERE name = ? AND is_current = 1")
                 .bind(&name)
-                .execute(&mut *tx).await?;
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("INSERT OR IGNORE INTO facts_tombstone (name) VALUES (?)")
                 .bind(&name)
-                .execute(&mut *tx).await?;
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(count)
     }
 
     // ===== ENTITIES =====
-    pub async fn create_entity(&self, name: &str, type_: Option<&str>, project: Option<&str>, observations: &[String]) -> Result<i64> {
+    pub async fn create_entity(
+        &self,
+        name: &str,
+        type_: Option<&str>,
+        project: Option<&str>,
+        observations: &[String],
+    ) -> Result<i64> {
         let mut tx = self.pool.begin().await?;
-        let row = sqlx::query("INSERT INTO entities (name, type, project) VALUES (?, ?, ?) RETURNING rowid")
-            .bind(name)
-            .bind(type_)
-            .bind(project)
-            .fetch_one(&mut *tx).await?;
-        
+        let row = sqlx::query(
+            "INSERT INTO entities (name, type, project) VALUES (?, ?, ?) RETURNING rowid",
+        )
+        .bind(name)
+        .bind(type_)
+        .bind(project)
+        .fetch_one(&mut *tx)
+        .await?;
+
         let rowid: i64 = row.get("rowid");
         for obs in observations {
             sqlx::query("INSERT INTO observations (entity_name, content) VALUES (?, ?)")
                 .bind(name)
                 .bind(obs)
-                .execute(&mut *tx).await?;
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(rowid)
@@ -347,10 +438,12 @@ impl Database {
         let mut tx = self.pool.begin().await?;
         let mut added = 0;
         for obs in observations {
-            let result = sqlx::query("INSERT INTO observations (entity_name, content) VALUES (?, ?)")
-                .bind(name)
-                .bind(obs)
-                .execute(&mut *tx).await?;
+            let result =
+                sqlx::query("INSERT INTO observations (entity_name, content) VALUES (?, ?)")
+                    .bind(name)
+                    .bind(obs)
+                    .execute(&mut *tx)
+                    .await?;
             added += result.rows_affected() as i64;
         }
         tx.commit().await?;
@@ -360,16 +453,21 @@ impl Database {
     pub async fn open_nodes(&self, names: &[String]) -> Result<Vec<EntityNode>> {
         let mut results = Vec::new();
         for name in names {
-            if let Some(entity) = sqlx::query("SELECT name, type, project FROM entities WHERE name = ?")
-                .bind(name)
-                .fetch_optional(&self.pool).await? {
-                let observations: Vec<String> = sqlx::query("SELECT content FROM observations WHERE entity_name = ?")
+            if let Some(entity) =
+                sqlx::query("SELECT name, type, project FROM entities WHERE name = ?")
                     .bind(name)
-                    .fetch_all(&self.pool).await?
-                    .into_iter()
-                    .map(|r| r.get("content"))
-                    .collect();
-                
+                    .fetch_optional(&self.pool)
+                    .await?
+            {
+                let observations: Vec<String> =
+                    sqlx::query("SELECT content FROM observations WHERE entity_name = ?")
+                        .bind(name)
+                        .fetch_all(&self.pool)
+                        .await?
+                        .into_iter()
+                        .map(|r| r.get("content"))
+                        .collect();
+
                 let relations: Vec<Relation> = sqlx::query("SELECT from_entity, to_entity, rel_type FROM relations WHERE from_entity = ? OR to_entity = ?")
                     .bind(name)
                     .bind(name)
@@ -381,7 +479,7 @@ impl Database {
                         rel_type: r.get("rel_type"),
                     })
                     .collect();
-                
+
                 results.push(EntityNode {
                     name: entity.get("name"),
                     type_: entity.get("type"),
@@ -411,18 +509,26 @@ impl Database {
                 SELECT entity_name as name FROM observations WHERE content LIKE ?
                 UNION
                 SELECT name FROM facts WHERE name LIKE ? AND is_current = 1
-            ) LIMIT ?"
+            ) LIMIT ?",
         )
         .bind(format!("%{}%", query))
         .bind(format!("%{}%", query))
         .bind(format!("%{}%", query))
         .bind(limit)
-        .fetch_all(&self.pool).await?;
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows.into_iter().map(|r| r.get("name")).collect())
     }
 
     // ===== TASKS =====
-    pub async fn create_task(&self, title: &str, body: &str, status: &str, project: &str, priority: &str) -> Result<i64> {
+    pub async fn create_task(
+        &self,
+        title: &str,
+        body: &str,
+        status: &str,
+        project: &str,
+        priority: &str,
+    ) -> Result<i64> {
         let row = sqlx::query(
             "INSERT INTO tasks (title, body, status, project, priority) VALUES (?, ?, ?, ?, ?) RETURNING rowid"
         )
@@ -435,63 +541,118 @@ impl Database {
         Ok(row.get("rowid"))
     }
 
-    pub async fn query_tasks(&self, status: Option<&str>, project: Option<&str>, search: Option<&str>, limit: i64) -> Result<Vec<Task>> {
+    pub async fn query_tasks(
+        &self,
+        status: Option<&str>,
+        project: Option<&str>,
+        search: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<Task>> {
         let mut query = String::from("SELECT rowid, title, body, status, project, priority, created_at, updated_at FROM tasks WHERE 1=1");
-        if status.is_some() { query.push_str(" AND status = ?"); }
-        if project.is_some() { query.push_str(" AND project = ?"); }
-        if search.is_some() { query.push_str(" AND (title LIKE ? OR body LIKE ?)"); }
+        if status.is_some() {
+            query.push_str(" AND status = ?");
+        }
+        if project.is_some() {
+            query.push_str(" AND project = ?");
+        }
+        if search.is_some() {
+            query.push_str(" AND (title LIKE ? OR body LIKE ?)");
+        }
         query.push_str(" ORDER BY created_at DESC LIMIT ?");
-        
+
         let mut q = sqlx::query(&query);
-        if let Some(s) = status { q = q.bind(s); }
-        if let Some(p) = project { q = q.bind(p); }
+        if let Some(s) = status {
+            q = q.bind(s);
+        }
+        if let Some(p) = project {
+            q = q.bind(p);
+        }
         if let Some(s) = search {
             q = q.bind(format!("%{}%", s));
             q = q.bind(format!("%{}%", s));
         }
         q = q.bind(limit);
-        
+
         let rows = q.fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|r| Task {
-            id: r.get("rowid"),
-            title: r.get("title"),
-            body: r.get("body"),
-            status: r.get("status"),
-            project: r.get("project"),
-            priority: r.get("priority"),
-            created_at: r.get("created_at"),
-            updated_at: r.get("updated_at"),
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| Task {
+                id: r.get("rowid"),
+                title: r.get("title"),
+                body: r.get("body"),
+                status: r.get("status"),
+                project: r.get("project"),
+                priority: r.get("priority"),
+                created_at: r.get("created_at"),
+                updated_at: r.get("updated_at"),
+            })
+            .collect())
     }
 
-    pub async fn update_task(&self, id: i64, title: Option<&str>, body: Option<&str>, status: Option<&str>, project: Option<&str>, priority: Option<&str>) -> Result<bool> {
+    pub async fn update_task(
+        &self,
+        id: i64,
+        title: Option<&str>,
+        body: Option<&str>,
+        status: Option<&str>,
+        project: Option<&str>,
+        priority: Option<&str>,
+    ) -> Result<bool> {
         let mut updates = Vec::new();
-        
-        if let Some(_t) = title { updates.push("title = ?"); }
-        if let Some(_b) = body { updates.push("body = ?"); }
-        if let Some(_s) = status { updates.push("status = ?"); }
-        if let Some(_p) = project { updates.push("project = ?"); }
-        if let Some(_p) = priority { updates.push("priority = ?"); }
-        
-        if updates.is_empty() { return Ok(false); }
-        
+
+        if let Some(_t) = title {
+            updates.push("title = ?");
+        }
+        if let Some(_b) = body {
+            updates.push("body = ?");
+        }
+        if let Some(_s) = status {
+            updates.push("status = ?");
+        }
+        if let Some(_p) = project {
+            updates.push("project = ?");
+        }
+        if let Some(_p) = priority {
+            updates.push("priority = ?");
+        }
+
+        if updates.is_empty() {
+            return Ok(false);
+        }
+
         updates.push("updated_at = CURRENT_TIMESTAMP");
         let query = format!("UPDATE tasks SET {} WHERE rowid = ?", updates.join(", "));
-        
+
         let mut q = sqlx::query(&query);
-        if let Some(t) = title { q = q.bind(t); }
-        if let Some(b) = body { q = q.bind(b); }
-        if let Some(s) = status { q = q.bind(s); }
-        if let Some(p) = project { q = q.bind(p); }
-        if let Some(p) = priority { q = q.bind(p); }
+        if let Some(t) = title {
+            q = q.bind(t);
+        }
+        if let Some(b) = body {
+            q = q.bind(b);
+        }
+        if let Some(s) = status {
+            q = q.bind(s);
+        }
+        if let Some(p) = project {
+            q = q.bind(p);
+        }
+        if let Some(p) = priority {
+            q = q.bind(p);
+        }
         q = q.bind(id);
-        
+
         let result = q.execute(&self.pool).await?;
         Ok(result.rows_affected() > 0)
     }
 
     // ===== MODEL PERSISTENCE =====
-    pub async fn save_model(&self, step: i64, weights: &[f32], biases: &[f32], optimizer: Option<&str>) -> Result<()> {
+    pub async fn save_model(
+        &self,
+        step: i64,
+        weights: &[f32],
+        biases: &[f32],
+        optimizer: Option<&str>,
+    ) -> Result<()> {
         sqlx::query(
             "INSERT INTO model_weights (step, weights_json, biases_json, optimizer_json) VALUES (?, ?, ?, ?)"
         )
@@ -507,11 +668,13 @@ impl Database {
         let row = sqlx::query("SELECT weights_json, biases_json FROM model_weights WHERE step = ? ORDER BY created_at DESC LIMIT 1")
             .bind(step)
             .fetch_optional(&self.pool).await?;
-        
-        Ok(row.map(|r| (
-            serde_json::from_str(r.get("weights_json")).unwrap(),
-            serde_json::from_str(r.get("biases_json")).unwrap(),
-        )))
+
+        Ok(row.map(|r| {
+            (
+                serde_json::from_str(r.get("weights_json")).unwrap(),
+                serde_json::from_str(r.get("biases_json")).unwrap(),
+            )
+        }))
     }
 
     // Full model state save/load
@@ -531,7 +694,7 @@ impl Database {
         let row = sqlx::query("SELECT weights_json FROM model_weights WHERE step = ? ORDER BY created_at DESC LIMIT 1")
             .bind(step)
             .fetch_optional(&self.pool).await?;
-        
+
         Ok(row.map(|r| r.get("weights_json")))
     }
 
@@ -548,25 +711,40 @@ impl Database {
         Ok(())
     }
 
-
     // ===== THOUGHTS =====
     pub async fn add_thought(&self, step: i64, thought: &str) -> Result<i64> {
         let row = sqlx::query("INSERT INTO thoughts (step, thought) VALUES (?, ?) RETURNING rowid")
             .bind(step)
             .bind(thought)
-            .fetch_one(&self.pool).await?;
+            .fetch_one(&self.pool)
+            .await?;
         Ok(row.get("rowid"))
     }
 
     pub async fn get_thoughts(&self, limit: i64) -> Result<Vec<(i64, i64, String, DateTime<Utc>)>> {
-        let rows = sqlx::query("SELECT rowid, step, thought, created_at FROM thoughts ORDER BY step ASC LIMIT ?")
-            .bind(limit)
-            .fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|r| (r.get("rowid"), r.get("step"), r.get("thought"), r.get("created_at"))).collect())
+        let rows = sqlx::query(
+            "SELECT rowid, step, thought, created_at FROM thoughts ORDER BY step ASC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.get("rowid"),
+                    r.get("step"),
+                    r.get("thought"),
+                    r.get("created_at"),
+                )
+            })
+            .collect())
     }
 
     pub async fn clear_thoughts(&self) -> Result<i64> {
-        let result = sqlx::query("DELETE FROM thoughts").execute(&self.pool).await?;
+        let result = sqlx::query("DELETE FROM thoughts")
+            .execute(&self.pool)
+            .await?;
         Ok(result.rows_affected() as i64)
     }
 
@@ -574,21 +752,29 @@ impl Database {
     pub async fn add_conclusion(&self, summary: &str) -> Result<i64> {
         let row = sqlx::query("INSERT INTO conclusions (summary) VALUES (?) RETURNING rowid")
             .bind(summary)
-            .fetch_one(&self.pool).await?;
+            .fetch_one(&self.pool)
+            .await?;
         Ok(row.get("rowid"))
     }
 
     pub async fn get_conclusions(&self) -> Result<Vec<(i64, String, DateTime<Utc>)>> {
-        let rows = sqlx::query("SELECT rowid, summary, created_at FROM conclusions ORDER BY created_at DESC")
-            .fetch_all(&self.pool).await?;
-        Ok(rows.into_iter().map(|r| (r.get("rowid"), r.get("summary"), r.get("created_at"))).collect())
+        let rows = sqlx::query(
+            "SELECT rowid, summary, created_at FROM conclusions ORDER BY created_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get("rowid"), r.get("summary"), r.get("created_at")))
+            .collect())
     }
 
     pub async fn explain_rank(&self, name: &str) -> Result<Option<RankExplanation>> {
         let row = sqlx::query("SELECT name, signal_type, value FROM rank_signals WHERE name = ?")
             .bind(name)
-            .fetch_optional(&self.pool).await?;
-        
+            .fetch_optional(&self.pool)
+            .await?;
+
         Ok(row.map(|r| RankExplanation {
             name: r.get("name"),
             signal: r.get("signal_type"),
@@ -599,12 +785,20 @@ impl Database {
     // ===== HEALTH =====
     pub async fn health(&self) -> Result<HealthInfo> {
         let tables: i64 = sqlx::query("SELECT COUNT(*) as c FROM sqlite_master WHERE type='table'")
-            .fetch_one(&self.pool).await?.get("c");
-        
-        let pages: i64 = sqlx::query("PRAGMA page_count").fetch_one(&self.pool).await?.get(0);
-        let journal_mode: String = sqlx::query("PRAGMA journal_mode").fetch_one(&self.pool).await?.get(0);
+            .fetch_one(&self.pool)
+            .await?
+            .get("c");
+
+        let pages: i64 = sqlx::query("PRAGMA page_count")
+            .fetch_one(&self.pool)
+            .await?
+            .get(0);
+        let journal_mode: String = sqlx::query("PRAGMA journal_mode")
+            .fetch_one(&self.pool)
+            .await?
+            .get(0);
         let journal = journal_mode != "off";
-        
+
         Ok(HealthInfo {
             tables,
             pages,
