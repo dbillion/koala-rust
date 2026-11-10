@@ -34,8 +34,8 @@ jobs:
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
       - run: |
-          # Use --exclude to skip the test binary
-          cargo doc --no-deps --document-private-items --exclude test_load_wasm
+          # Use --workspace with --exclude to skip the test binary
+          cargo doc --workspace --no-deps --document-private-items --exclude test_load_wasm
           crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
           echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
       - uses: actions/upload-artifact@v4
@@ -80,8 +80,17 @@ jobs:
           EOF
       - run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo install --list | grep deepwiki-rs
-          $HOME/.cargo/bin/litho generate 2>/dev/null || $(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name=="deepwiki-rs") | .manifest_path' | xargs dirname)/target/release/litho generate
+          # Find litho binary - try common locations
+          LITHO_BIN="$HOME/.cargo/bin/litho"
+          if [ ! -f "$LITHO_BIN" ]; then
+            LITHO_BIN=$(find ~/.cargo -name "litho" -type f 2>/dev/null | head -1)
+          fi
+          if [ ! -f "$LITHO_BIN" ]; then
+            # Fallback: build from source in the install directory
+            cargo install --path $(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name=="deepwiki-rs") | .manifest_path' | xargs dirname) --locked
+            LITHO_BIN="$HOME/.cargo/bin/litho"
+          fi
+          "$LITHO_BIN" generate
           ls -la docs/architecture/
       - uses: actions/upload-artifact@v4
         with:
