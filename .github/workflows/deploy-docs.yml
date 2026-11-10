@@ -124,7 +124,6 @@ jobs:
           [book]
           authors = ["dbillion"]
           language = "en"
-          multilingual = false
           src = "src"
           title = "peabrain-rust Documentation"
 
