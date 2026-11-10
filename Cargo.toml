@@ -25,7 +25,7 @@ automerge = "0.3"
 automerge_repo = "0.1"
 
 # v0.4: Embeddings
-candle-core = { version = "0.8", features = ["mkl"] }
+candle-core = "0.8"
 candle-nn = "0.8"
 candle-transformers = "0.8"
 tokenizers = "0.19"
