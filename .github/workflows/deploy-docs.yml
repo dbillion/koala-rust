@@ -34,8 +34,8 @@ jobs:
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
       - run: |
-          # Use --workspace with --exclude to skip the test binary
-          cargo doc --workspace --no-deps --document-private-items --exclude test_load_wasm
+          # Use --lib to only document the library target, not binaries
+          cargo doc --lib --no-deps --document-private-items
           crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
           echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
       - uses: actions/upload-artifact@v4
@@ -80,16 +80,21 @@ jobs:
           EOF
       - run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          # Find litho binary - try common locations
-          LITHO_BIN="$HOME/.cargo/bin/litho"
-          if [ ! -f "$LITHO_BIN" ]; then
-            LITHO_BIN=$(find ~/.cargo -name "litho" -type f 2>/dev/null | head -1)
+          # Find litho binary
+          LITHO_BIN=$(which litho 2>/dev/null || find ~/.cargo -name "litho" -type f 2>/dev/null | head -1)
+          if [ -z "$LITHO_BIN" ]; then
+            echo "litho binary not found, trying cargo install --list"
+            cargo install --list
+            LITHO_BIN=$(cargo install --list | grep -A1 "deepwiki-rs" | grep -E "^\s+" | awk '{print $1}' | head -1)
+            if [ -n "$LITHO_BIN" ]; then
+              LITHO_BIN="$HOME/.cargo/bin/$LITHO_BIN"
+            fi
           fi
-          if [ ! -f "$LITHO_BIN" ]; then
-            # Fallback: build from source in the install directory
-            cargo install --path $(cargo metadata --format-version=1 | jq -r '.packages[] | select(.name=="deepwiki-rs") | .manifest_path' | xargs dirname) --locked
-            LITHO_BIN="$HOME/.cargo/bin/litho"
+          if [ -z "$LITHO_BIN" ] || [ ! -f "$LITHO_BIN" ]; then
+            echo "ERROR: litho binary not found"
+            exit 1
           fi
+          echo "Using litho binary: $LITHO_BIN"
           "$LITHO_BIN" generate
           ls -la docs/architecture/
       - uses: actions/upload-artifact@v4
