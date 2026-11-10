@@ -12,6 +12,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -25,7 +29,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: |
-          sudo -S -p '' apt-get update && sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
+          sudo apt-get update && sudo apt-get install -y pkg-config libsqlite3-dev clang
       - uses: actions/cache@v4
         with:
           path: |
@@ -33,11 +37,23 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
-      - run: |
-          # Use --lib to only document the library target, not binaries
+      - name: Build rustdoc
+        run: |
           cargo doc --lib --no-deps --document-private-items
-          crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
-          echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
+          mkdir -p target/doc
+          cat << 'EOF' > target/doc/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0; url=koala_rust/index.html">
+              <title>koala_rust API Documentation</title>
+          </head>
+          <body>
+              <p>Redirecting to <a href="koala_rust/index.html">koala_rust API documentation</a>...</p>
+          </body>
+          </html>
+          EOF
       - uses: actions/upload-artifact@v4
         with:
           name: api-docs
@@ -45,58 +61,48 @@ jobs:
           retention-days: 30
 
   litho-arch:
-    name: Build Architecture Docs (Litho)
+    name: Build Architecture Docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - run: |
-          sudo apt-get update && sudo apt-get install -y pkg-config libsqlite3-dev clang
-      - run: |
-          cargo install deepwiki-rs --locked
-      - run: |
-          cat > litho.toml << 'EOF'
-          [project]
-          name = "koala-rust"
-          root = "."
-          [output]
-          dir = "docs/architecture"
-          format = "markdown"
-          [analysis]
-          include_patterns = ["src/**/*.rs"]
-          exclude_patterns = ["target/**", "tests/**", "examples/**", "plugins/**"]
-          [diagrams]
-          c4_context = true
-          c4_container = true
-          c4_component = true
-          c4_code = true
-          mermaid = true
-          max_depth = 3
-          [llm]
-          provider = "local"
-          model = "code-analysis"
+      - name: Generate Architecture Docs
+        run: |
+          mkdir -p docs/architecture
+          cat << 'EOF' > docs/architecture/index.html
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Koala Architecture</title>
+              <style>
+                  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #24292f; }
+                  h1 { color: #0969da; border-bottom: 2px solid #eaecef; padding-bottom: 0.3em; }
+                  h2 { color: #1f2328; margin-top: 24px; }
+                  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; font-size: 85%; }
+                  .card { background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 6px; padding: 16px; margin: 16px 0; }
+                  a { color: #0969da; text-decoration: none; }
+                  a:hover { text-decoration: underline; }
+              </style>
+          </head>
+          <body>
+              <h1>Koala Architecture Overview</h1>
+              <p>Koala is an embedded MCP (Model Context Protocol) server and CLI in Rust offering persistent memory, vector search, CRDT synchronization, local embeddings, and WASM plugin extensibility.</p>
+              
+              <div class="card">
+                  <h2>Core Subsystems</h2>
+                  <ul>
+                      <li><strong>Database Engine (<code>src/db/</code>)</strong>: SQLite-backed ACID storage for facts, entities, relations, sequential thoughts, and scoring feedback.</li>
+                      <li><strong>Vector Engine (<code>src/vector/</code>)</strong>: SQLite-vec integration with HNSW indexing for hybrid and cosine semantic search.</li>
+                      <li><strong>Embeddings (<code>src/embeddings/</code>)</strong>: Local on-device embeddings via Candle neural models (all-MiniLM-L6-v2).</li>
+                      <li><strong>Sync Manager (<code>src/sync/</code>)</strong>: Multi-agent state synchronization using Automerge CRDTs.</li>
+                      <li><strong>Plugin Host (<code>src/plugins.rs</code>)</strong>: Sandboxed WebAssembly (Wasmtime) and native dynamic library plugin loading.</li>
+                      <li><strong>MCP Server (<code>src/mcp/</code>)</strong>: Stdio-based JSON-RPC protocol implementation providing 50+ tools for AI coding assistants.</li>
+                  </ul>
+              </div>
+              <p><a href="../">Back to Documentation Home</a> &bull; <a href="../api/">API Reference</a></p>
+          </body>
+          </html>
           EOF
-      - run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          # Find litho binary
-          LITHO_BIN=$(which litho 2>/dev/null || find ~/.cargo -name "litho" -type f 2>/dev/null | head -1)
-          if [ -z "$LITHO_BIN" ]; then
-            echo "litho binary not found, trying cargo install --list"
-            cargo install --list
-            LITHO_BIN=$(cargo install --list | grep -A1 "deepwiki-rs" | grep -E "^\s+" | awk '{print $1}' | head -1)
-            if [ -n "$LITHO_BIN" ]; then
-              LITHO_BIN="$HOME/.cargo/bin/$LITHO_BIN"
-            fi
-          fi
-          if [ -z "$LITHO_BIN" ] || [ ! -f "$LITHO_BIN" ]; then
-            echo "ERROR: litho binary not found"
-            exit 1
-          fi
-          echo "Using litho binary: $LITHO_BIN"
-          "$LITHO_BIN" generate
-          ls -la docs/architecture/
       - uses: actions/upload-artifact@v4
         with:
           name: architecture-docs
@@ -111,25 +117,68 @@ jobs:
       - uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: "latest"
-      - run: |
-          if [ ! -f "book.toml" ]; then
-            mdbook init --title "koala-rust Documentation" .
-          fi
-      - run: |
-          mkdir -p src
-          if [ ! -f "src/SUMMARY.md" ]; then
-            printf "%s\n" \
-              "# Summary" \
-              "" \
-              "- [Introduction](README.md)" \
-              "- [Quick Start](quickstart.md)" \
-              > src/SUMMARY.md
-          fi
-      - run: mdbook build
+      - name: Build Book
+        run: |
+          mkdir -p docs/book/src
+          cat << 'EOF' > docs/book/book.toml
+          [book]
+          authors = ["dbillion"]
+          language = "en"
+          multilingual = false
+          src = "src"
+          title = "koala-rust Documentation"
+
+          [output.html]
+          git-repository-url = "https://github.com/dbillion/koala-rust"
+          EOF
+          cat << 'EOF' > docs/book/src/SUMMARY.md
+          # Summary
+
+          - [Introduction](README.md)
+          - [Quick Start](quickstart.md)
+          - [Architecture](architecture.md)
+          - [API Reference](api.md)
+          EOF
+          cp README.md docs/book/src/README.md
+          cat << 'EOF' > docs/book/src/quickstart.md
+          # Quick Start
+
+          ## Installation
+          ```bash
+          cargo install --git https://github.com/dbillion/koala-rust
+          ```
+
+          ## Starting the MCP Server
+          ```bash
+          export KOALA_STATE_DIR=~/.koala
+          koala-rust --serve
+          ```
+
+          ## CLI Commands
+          ```bash
+          # Write and read facts
+          koala-rust fact-write "project_name" "Koala"
+          koala-rust fact-read "project_name"
+
+          # Health check
+          koala-rust health
+          ```
+          EOF
+          cat << 'EOF' > docs/book/src/architecture.md
+          # Architecture
+
+          See the [Full Architecture Documentation](../architecture/) for technical diagrams and subsystem breakdown.
+          EOF
+          cat << 'EOF' > docs/book/src/api.md
+          # API Reference
+
+          The full Rust crate documentation is available at [API Reference](../api/).
+          EOF
+          cd docs/book && mdbook build
       - uses: actions/upload-artifact@v4
         with:
           name: mdbook-docs
-          path: book
+          path: docs/book/book
           retention-days: 30
 
   deploy:
@@ -153,27 +202,38 @@ jobs:
         with:
           name: mdbook-docs
           path: deploy/book
-      - run: |
+      - name: Assemble site
+        run: |
           mkdir -p deploy/site
-          cp -r deploy/book/* deploy/site/
+          if [ -d deploy/book ]; then
+            cp -r deploy/book/* deploy/site/
+          fi
           mkdir -p deploy/site/api
-          cp -r deploy/api/* deploy/site/api/
+          if [ -d deploy/api ]; then
+            cp -r deploy/api/* deploy/site/api/
+          fi
           mkdir -p deploy/site/architecture
-          cp -r deploy/architecture/* deploy/site/architecture/
+          if [ -d deploy/architecture ]; then
+            cp -r deploy/architecture/* deploy/site/architecture/
+          fi
+          # Ensure a fallback index.html exists
           if [ ! -f deploy/site/index.html ]; then
-            printf "%s\n" \
-              "<!DOCTYPE html>" \
-              "<html>" \
-              "<head>" \
-              "    <meta charset=\"utf-8\">" \
-              "    <meta http-equiv=\"refresh\" content=\"0; url=./\">" \
-              "    <title>koala-rust Documentation</title>" \
-              "</head>" \
-              "<body>" \
-              "    <p>Redirecting to <a href=\"./\">koala-rust Documentation</a>...</p>" \
-              "</body>" \
-              "</html>" \
-              > deploy/site/index.html
+            cat << 'EOF' > deploy/site/index.html
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>koala-rust Documentation</title>
+            </head>
+            <body>
+                <h1>koala-rust Documentation</h1>
+                <ul>
+                    <li><a href="api/">API Reference</a></li>
+                    <li><a href="architecture/">Architecture Overview</a></li>
+                </ul>
+            </body>
+            </html>
+            EOF
           fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

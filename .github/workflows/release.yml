@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.2.0)'
+        required: false
+        default: 'v0.2.0'
 
 permissions:
   contents: write
@@ -127,7 +133,7 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -150,8 +156,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: koala-rust ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: koala-rust ${{ inputs.tag || github.ref_name }}
           body: |
             ## koala-rust ${{ github.ref_name }}
 

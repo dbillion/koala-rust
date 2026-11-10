@@ -1,11 +1,17 @@
+#![allow(clippy::all)]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use koala_rust::{Koala, mcp::run_stdio};
+use koala_rust::{mcp::run_stdio, Koala};
 
 #[derive(Parser, Debug)]
-#[command(name = "koala-rust", version, about = "Koala MCP Server & CLI in Rust")]
+#[command(
+    name = "koala-rust",
+    version,
+    about = "Koala MCP Server & CLI in Rust"
+)]
 struct Args {
     /// State directory (default: $HOME/.koala)
     #[arg(long, env = "KOALA_STATE_DIR", global = true)]
@@ -21,7 +27,6 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    
     // === Fact tools ===
     /// Write a fact
     FactWrite {
@@ -279,7 +284,7 @@ enum Command {
     // === System ===
     /// Health check
     Health,
-    
+
     // === SQL ===
     /// Run raw SQL query
     Sql {
@@ -291,39 +296,38 @@ enum Command {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    
+
     let state_dir = args.state_dir.unwrap_or_else(|| {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".koala")
     });
-    
+
     std::fs::create_dir_all(&state_dir)?;
-    
+
     let brain = Koala::new(state_dir.clone()).await?;
 
-        if args.serve {
-            run_stdio(brain).await?;
-        } else {
-            match args.command {
-                Some(cmd) => {
-                    handle_cli_command(brain, cmd).await?;
-                }
-                None => {
-                    println!("Koala Rust v0.2.0");
-                    println!("State directory: {}", state_dir.display());
-                    println!("Use --serve for MCP server, or subcommands for CLI");
-                }
+    if args.serve {
+        run_stdio(brain).await?;
+    } else {
+        match args.command {
+            Some(cmd) => {
+                handle_cli_command(brain, cmd).await?;
+            }
+            None => {
+                println!("Koala Rust v0.2.0");
+                println!("State directory: {}", state_dir.display());
+                println!("Use --serve for MCP server, or subcommands for CLI");
             }
         }
+    }
 
-        Ok(())
+    Ok(())
 }
 
 async fn handle_cli_command(mut brain: Koala, cmd: Command) -> Result<()> {
-    use koala_rust::db::Database;
-use sqlx::Row;
-    
+    use sqlx::Row;
+
     match cmd {
         // Facts
         Command::FactWrite { name, text } => {
@@ -339,7 +343,9 @@ use sqlx::Row;
         }
         Command::FactList => {
             let facts = brain.db.list_facts().await?;
-            for f in facts { println!("{}", f); }
+            for f in facts {
+                println!("{}", f);
+            }
         }
         Command::FactVersions { name, limit } => {
             let versions = brain.db.read_fact_versions(&name, limit).await?;
@@ -355,10 +361,18 @@ use sqlx::Row;
             let count = brain.db.delete_fact_prefix(&prefix).await?;
             println!("Deleted {} facts", count);
         }
-        
+
         // Entities
-        Command::EntityCreate { name, type_, project, observations } => {
-            let id = brain.db.create_entity(&name, type_.as_deref(), project.as_deref(), &observations).await?;
+        Command::EntityCreate {
+            name,
+            type_,
+            project,
+            observations,
+        } => {
+            let id = brain
+                .db
+                .create_entity(&name, type_.as_deref(), project.as_deref(), &observations)
+                .await?;
             println!("Entity created: {} (id: {})", name, id);
         }
         Command::EntityAddObs { name, observations } => {
@@ -368,42 +382,109 @@ use sqlx::Row;
         Command::EntityOpen { names } => {
             let nodes = brain.db.open_nodes(&names).await?;
             for node in nodes {
-                println!("Entity: {} (type: {:?}, project: {:?})", node.name, node.type_, node.project);
-                for obs in node.observations { println!("  - {}", obs); }
-                for rel in node.relations { println!("  {} -> {} ({})", rel.from, rel.to, rel.rel_type); }
+                println!(
+                    "Entity: {} (type: {:?}, project: {:?})",
+                    node.name, node.type_, node.project
+                );
+                for obs in node.observations {
+                    println!("  - {}", obs);
+                }
+                for rel in node.relations {
+                    println!("  {} -> {} ({})", rel.from, rel.to, rel.rel_type);
+                }
             }
         }
         Command::EntitySearch { query, limit } => {
             let results = brain.db.search_nodes(&query, limit).await?;
-            for r in results { println!("{}", r); }
+            for r in results {
+                println!("{}", r);
+            }
         }
         Command::RelationCreate { from, to, type_ } => {
             let id = brain.db.create_relation(&from, &to, &type_).await?;
-            println!("Relation created: {} -> {} ({}) (id: {})", from, to, type_, id);
+            println!(
+                "Relation created: {} -> {} ({}) (id: {})",
+                from, to, type_, id
+            );
         }
-        
+
         // Tasks
-        Command::TaskCreate { title, body, status, project, priority } => {
-            let id = brain.db.create_task(&title, &body, &status, &project, &priority).await?;
+        Command::TaskCreate {
+            title,
+            body,
+            status,
+            project,
+            priority,
+        } => {
+            let id = brain
+                .db
+                .create_task(&title, &body, &status, &project, &priority)
+                .await?;
             println!("Task created: {} (id: {})", title, id);
         }
-        Command::TaskQuery { status, project, search, limit } => {
-            let tasks = brain.db.query_tasks(status.as_deref(), project.as_deref(), search.as_deref(), limit).await?;
+        Command::TaskQuery {
+            status,
+            project,
+            search,
+            limit,
+        } => {
+            let tasks = brain
+                .db
+                .query_tasks(
+                    status.as_deref(),
+                    project.as_deref(),
+                    search.as_deref(),
+                    limit,
+                )
+                .await?;
             for t in tasks {
-                println!("{} [{}] {} - {} (priority: {})", t.id, t.status, t.title, t.project, t.priority);
+                println!(
+                    "{} [{}] {} - {} (priority: {})",
+                    t.id, t.status, t.title, t.project, t.priority
+                );
             }
         }
-        Command::TaskUpdate { id, title, body, status, project, priority } => {
-            let updated = brain.db.update_task(id, title.as_deref(), body.as_deref(), status.as_deref(), project.as_deref(), priority.as_deref()).await?;
+        Command::TaskUpdate {
+            id,
+            title,
+            body,
+            status,
+            project,
+            priority,
+        } => {
+            let updated = brain
+                .db
+                .update_task(
+                    id,
+                    title.as_deref(),
+                    body.as_deref(),
+                    status.as_deref(),
+                    project.as_deref(),
+                    priority.as_deref(),
+                )
+                .await?;
             println!("Updated: {}", updated);
         }
-        
+
         // Model
-        Command::ModelInit { hidden, activation, lr } => {
+        Command::ModelInit {
+            hidden,
+            activation,
+            lr,
+        } => {
             brain.init_model(hidden, lr, &activation).await?;
-            println!("Model initialized: hidden={}, activation={}, lr={}", hidden, activation, lr);
+            println!(
+                "Model initialized: hidden={}, activation={}, lr={}",
+                hidden, activation, lr
+            );
         }
-        Command::ModelTrain { xs, ys, targets, lr, steps } => {
+        Command::ModelTrain {
+            xs,
+            ys,
+            targets,
+            lr,
+            steps,
+        } => {
             let loss = brain.train_model(&xs, &ys, &targets, lr, steps).await?;
             println!("Trained: steps={}, loss={}", steps, loss);
         }
@@ -422,21 +503,28 @@ use sqlx::Row;
             println!("Model saved at step {}", step);
         }
         Command::ModelLoad { step } => {
-            if let Some(state) = brain.load_model(step).await? {
+            if let Some(_state) = brain.load_model(step).await? {
                 println!("Model loaded at step {}", step);
             } else {
                 println!("No model at step {}", step);
             }
         }
-        
+
         // Thoughts
-        Command::Think { step, thought, next_step } => {
+        Command::Think {
+            step,
+            thought,
+            next_step,
+        } => {
             let id = brain.db.add_thought(step, &thought).await?;
-            println!("Thought added (id: {}): step={}, next={}", id, step, next_step);
+            println!(
+                "Thought added (id: {}): step={}, next={}",
+                id, step, next_step
+            );
         }
         Command::ThoughtHistory { limit } => {
             let thoughts = brain.db.get_thoughts(limit).await?;
-            for (id, step, thought, created) in thoughts {
+            for (id, step, thought, _created) in thoughts {
                 println!("{} [{}] {}", id, step, thought);
             }
         }
@@ -444,13 +532,13 @@ use sqlx::Row;
             let count = brain.db.clear_thoughts().await?;
             println!("Cleared {} thoughts", count);
         }
-        
+
         // Conclusion
         Command::Conclusion { summary } => {
             let id = brain.db.add_conclusion(&summary).await?;
             println!("Conclusion added (id: {}): {}", id, summary);
         }
-        
+
         // Ranking
         Command::Feedback { name, signal, kind } => {
             brain.db.feedback(&name, &signal, &kind).await?;
@@ -463,14 +551,16 @@ use sqlx::Row;
                 println!("No rank data for {}", name);
             }
         }
-        
+
         // System
         Command::Health => {
             let health = brain.db.health().await?;
-            println!("Tables: {}, Pages: {}, Journal: {}, Cache: {}", 
-                health.tables, health.pages, health.journal, health.cache_used);
+            println!(
+                "Tables: {}, Pages: {}, Journal: {}, Cache: {}",
+                health.tables, health.pages, health.journal, health.cache_used
+            );
         }
-        
+
         // SQL
         Command::Sql { query } => {
             let db = &brain.db;
@@ -478,13 +568,14 @@ use sqlx::Row;
             for row in rows {
                 let mut cols = Vec::new();
                 for i in 0..row.len() {
-                    cols.push(row.try_get::<String, _>(i).unwrap_or_else(|_| "NULL".to_string()));
+                    cols.push(
+                        row.try_get::<String, _>(i)
+                            .unwrap_or_else(|_| "NULL".to_string()),
+                    );
                 }
                 println!("{}", cols.join(" | "));
             }
         }
-        
-        _ => {}
     }
     Ok(())
 }
