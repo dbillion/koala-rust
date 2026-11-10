@@ -34,12 +34,12 @@ jobs:
             target
           key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
       - run: |
-          # Exclude test file from doc build
-          mv test_load_wasm.rs test_load_wasm.rs.bak 2>/dev/null || true
+          # Move test file completely out of workspace
+          mv test_load_wasm.rs /tmp/test_load_wasm.rs.bak 2>/dev/null || true
           cargo doc --no-deps --document-private-items
           crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
           echo "<meta http-equiv=refresh content=0;url=$crate_name/> > target/doc/index.html
-          mv test_load_wasm.rs.bak test_load_wasm.rs 2>/dev/null || true
+          mv /tmp/test_load_wasm.rs.bak test_load_wasm.rs 2>/dev/null || true
       - uses: actions/upload-artifact@v4
         with:
           name: api-docs
@@ -82,6 +82,7 @@ jobs:
           model = "code-analysis"
           EOF
       - run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
           litho generate
           ls -la docs/architecture/
       - uses: actions/upload-artifact@v4
