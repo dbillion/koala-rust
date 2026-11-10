@@ -215,24 +215,8 @@ jobs:
           if [ -d deploy/architecture ]; then
             cp -r deploy/architecture/* deploy/site/architecture/
           fi
-          # Ensure a fallback index.html exists
           if [ ! -f deploy/site/index.html ]; then
-            cat << 'EOF' > deploy/site/index.html
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>koala-rust Documentation</title>
-            </head>
-            <body>
-                <h1>koala-rust Documentation</h1>
-                <ul>
-                    <li><a href="api/">API Reference</a></li>
-                    <li><a href="architecture/">Architecture Overview</a></li>
-                </ul>
-            </body>
-            </html>
-            EOF
+            printf '%s\n' '<!DOCTYPE html>' '<html>' '<head><meta charset="utf-8"><title>koala-rust Documentation</title></head>' '<body><h1>koala-rust Documentation</h1><ul><li><a href="api/">API Reference</a></li><li><a href="architecture/">Architecture Overview</a></li></ul></body></html>' > deploy/site/index.html
           fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
