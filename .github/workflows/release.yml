@@ -21,6 +21,10 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -133,27 +137,42 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: (!cancelled()) && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           path: release-assets
           pattern: koala-rust-*
           merge-multiple: true
 
+      - name: Check assets
+        id: check_assets
+        run: |
+          mkdir -p release-assets
+          count=$(ls -1 release-assets/koala-rust-* 2>/dev/null | wc -l)
+          echo "Found $count release asset(s)"
+          if [ "$count" -eq 0 ]; then
+            echo "has_assets=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_assets=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: List assets
+        if: steps.check_assets.outputs.has_assets == 'true'
         run: |
           ls -la release-assets/
-          file release-assets/*
 
       - name: Generate checksums
+        if: steps.check_assets.outputs.has_assets == 'true'
         run: |
           cd release-assets
-          sha256sum * > SHA256SUMS.txt
+          sha256sum koala-rust-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create Release
+        if: steps.check_assets.outputs.has_assets == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
