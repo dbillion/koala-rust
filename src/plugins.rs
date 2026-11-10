@@ -252,57 +252,97 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Load a WASM plugin (.wasm)
-    pub async fn load_wasm_plugin(&self, module_name: &str) -> Result<()> {
-        let module_path = self.wasm_module_dir.join(module_name);
-        info!("Loading WASM plugin: {:?}", module_path);
+    /// Load a WASM plugin (.wasm) with optional manifest/tools JSON override
+            pub async fn load_wasm_plugin(&self, module_name: &str, manifest_json: Option<serde_json::Value>, tools_json: Option<serde_json::Value>) -> Result<()> {
+                let module_path = self.wasm_module_dir.join(module_name);
+                info!("Loading WASM plugin: {:?}", module_path);
+                eprintln!("DEBUG: Loading WASM plugin: {:?}", module_path);
 
-        let module = Module::from_file(&self.wasm_engine, &module_path)?;
-        let mut store = Store::new(&self.wasm_engine, ());
-        
-        // Create linker with host functions
-        let mut linker = Linker::new(&self.wasm_engine);
-        self.add_host_functions(&mut linker)?;
+                let module = Module::from_file(&self.wasm_engine, &module_path)?;
+                let mut store = Store::new(&self.wasm_engine, ());
 
-        // Instantiate
-        let instance = linker.instantiate(&mut store, &module)?;
-        
-        // Get exports
-        let get_tools = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_tools")?;
-        let (tools_ptr, tools_len) = get_tools.call(&mut store, ())?;
-        
-        // Read tools from WASM memory
-        let memory = instance.get_memory(&mut store, "memory").unwrap();
-        let tools_data = &memory.data(&store)[tools_ptr as usize..tools_ptr as usize + tools_len as usize];
-        let tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
+                // Create linker with host functions
+                let mut linker = Linker::new(&self.wasm_engine);
+                self.add_host_functions(&mut linker)?;
 
-        // Get manifest
-        let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
-        let (manifest_ptr, manifest_len) = get_manifest.call(&mut store, ())?;
-        let manifest_data = &memory.data(&store)[manifest_ptr as usize..manifest_ptr as usize + manifest_len as usize];
-        let manifest: PluginManifest = serde_json::from_slice(manifest_data)?;
+                // Instantiate asynchronously (required when async_support is enabled)
+                let instance = linker.instantiate_async(&mut store, &module).await?;
 
-        let instance_id = {
-            let mut id = self.next_instance_id.lock().await;
-            *id += 1;
-            *id
-        };
+                // Get allocate function to allocate memory in WASM for JSON data
+                let allocate = instance.get_typed_func::<(i32,), (i32,)>(&mut store, "allocate")?;
+                eprintln!("DEBUG: Got allocate function");
 
-        let plugin = Plugin {
-            manifest,
-            plugin_type: PluginType::Wasm { module, instance_id },
-            state: PluginState {
-                enabled: true,
-                loaded_at: chrono::Utc::now(),
-                call_count: 0,
-                last_error: None,
-            },
-        };
+                // Get set_manifest and set_tools functions (exported by WASM)
+                let set_manifest = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_manifest")?;
+                let set_tools = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_tools")?;
+                eprintln!("DEBUG: Got set_manifest and set_tools functions");
 
-        self.plugins.insert(plugin.manifest.name.clone(), plugin);
-        info!("Loaded WASM plugin: {}", module_name);
-        Ok(())
-    }
+                // Write manifest JSON: allocate in WASM memory, copy data, register pointer
+                let manifest_json = manifest_json.unwrap_or_else(|| serde_json::json!({}));
+                let manifest_bytes = serde_json::to_vec(&manifest_json)?;
+                eprintln!("DEBUG: Manifest JSON bytes: {} bytes, content: {}", manifest_bytes.len(), String::from_utf8_lossy(&manifest_bytes));
+                let manifest_ptr = allocate.call_async(&mut store, (manifest_bytes.len() as i32,)).await?.0;
+                eprintln!("DEBUG: Allocated manifest_ptr: {}", manifest_ptr);
+                let memory = instance.get_memory(&mut store, "memory").unwrap();
+                memory.data_mut(&mut store)[manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()].copy_from_slice(&manifest_bytes);
+                // Verify write
+                let verify = &memory.data(&store)[manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()];
+                eprintln!("DEBUG: Verify write at manifest_ptr: {} bytes, content: {}", verify.len(), String::from_utf8_lossy(verify));
+                set_manifest.call_async(&mut store, (manifest_ptr, manifest_bytes.len() as i32)).await?;
+                eprintln!("DEBUG: Called set_manifest");
+
+                // Write tools JSON: allocate in WASM memory, copy data, register pointer
+                let tools_json = tools_json.unwrap_or_else(|| serde_json::json!([]));
+                let tools_bytes = serde_json::to_vec(&tools_json)?;
+                eprintln!("DEBUG: Tools JSON bytes: {} bytes, content: {}", tools_bytes.len(), String::from_utf8_lossy(&tools_bytes));
+                let tools_ptr = allocate.call_async(&mut store, (tools_bytes.len() as i32,)).await?.0;
+                eprintln!("DEBUG: Allocated tools_ptr: {}", tools_ptr);
+                memory.data_mut(&mut store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()].copy_from_slice(&tools_bytes);
+                // Verify write
+                let verify = &memory.data(&store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()];
+                eprintln!("DEBUG: Verify write at tools_ptr: {} bytes, content: {}", verify.len(), String::from_utf8_lossy(verify));
+                set_tools.call_async(&mut store, (tools_ptr, tools_bytes.len() as i32)).await?;
+                eprintln!("DEBUG: Called set_tools");
+
+                // Get exports (now using the set JSON data)
+                let get_tools = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_tools")?;
+                let (tools_ptr_out, tools_len) = get_tools.call_async(&mut store, ()).await?;
+                eprintln!("DEBUG: get_tools returned: ptr={}, len={}", tools_ptr_out, tools_len);
+
+                // Read tools from WASM memory
+                let tools_data = &memory.data(&store)[tools_ptr_out as usize..tools_ptr_out as usize + tools_len as usize];
+                eprintln!("DEBUG: Tools data read: {} bytes, content: {}", tools_data.len(), String::from_utf8_lossy(tools_data));
+                let tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
+
+                // Get manifest
+                let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
+                let (manifest_ptr_out, manifest_len) = get_manifest.call_async(&mut store, ()).await?;
+                eprintln!("DEBUG: get_manifest returned: ptr={}, len={}", manifest_ptr_out, manifest_len);
+                let manifest_data = &memory.data(&store)[manifest_ptr_out as usize..manifest_ptr_out as usize + manifest_len as usize];
+                eprintln!("DEBUG: Manifest data read: {} bytes, content: {}", manifest_data.len(), String::from_utf8_lossy(manifest_data));
+                let manifest: PluginManifest = serde_json::from_slice(manifest_data)?;
+
+                let instance_id = {
+                    let mut id = self.next_instance_id.lock().await;
+                    *id += 1;
+                    *id
+                };
+
+                let plugin = Plugin {
+                    manifest,
+                    plugin_type: PluginType::Wasm { module, instance_id },
+                    state: PluginState {
+                        enabled: true,
+                        loaded_at: chrono::Utc::now(),
+                        call_count: 0,
+                        last_error: None,
+                    },
+                };
+
+                self.plugins.insert(plugin.manifest.name.clone(), plugin);
+                info!("Loaded WASM plugin: {}", module_name);
+                Ok(())
+            }
 
     fn add_host_functions(&self, linker: &mut Linker<()>) -> Result<()> {
         let host = self.wasm_host.clone();
@@ -435,14 +475,14 @@ impl PluginManager {
             }
         }
 
-        // Load WASM plugins
+        // Load WASM plugins (external .wasm files without registry JSON)
         if self.wasm_module_dir.exists() {
             for entry in std::fs::read_dir(&self.wasm_module_dir)? {
                 let entry = entry?;
                 let path = entry.path();
                 if path.extension().map_or(false, |e| e == "wasm") {
-                    if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-                        if self.load_wasm_plugin(name).await.is_ok() {
+                    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                        if self.load_wasm_plugin(name, None, None).await.is_ok() {
                             loaded.push(name.to_string());
                         }
                     }
@@ -451,6 +491,15 @@ impl PluginManager {
         }
 
         Ok(loaded)
+    }
+
+    /// Load a builtin plugin with JSON from registry
+    pub async fn load_builtin_plugin(&self, name: &str, registry: &crate::plugin_marketplace::PluginRegistry) -> Result<()> {
+        let manifest_json = Some(registry.get_builtin_manifest(name));
+        let tools_json = Some(registry.get_builtin_tools(name));
+        // Pass name with .wasm extension for file loading
+        let filename = if name.ends_with(".wasm") { name.to_string() } else { format!("{}.wasm", name) };
+        self.load_wasm_plugin(&filename, manifest_json, tools_json).await
     }
 }
 

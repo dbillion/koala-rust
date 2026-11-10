@@ -64,10 +64,8 @@ impl VectorEngine {
             return Ok(());
         }
 
-        // Load sqlite-vec extension
-        self.load_extension().await?;
-
-        // Create vector virtual tables
+        // Extension is now loaded on every connection via Database pool
+        // Just create virtual tables
         self.create_tables().await?;
 
         *initialized = true;
@@ -75,23 +73,7 @@ impl VectorEngine {
     }
 
     async fn load_extension(&self) -> Result<()> {
-        // Enable extension loading - try each path sequentially
-        let paths = [
-            "vec0",
-            "sqlite_vec",
-            "/usr/lib/sqlite3/vec0",
-            "/usr/local/lib/sqlite3/vec0",
-        ];
-        
-        for path in paths {
-            let query = format!("SELECT load_extension('{}')", path);
-            if sqlx::query(&query).execute(&self.pool).await.is_ok() {
-                return Ok(());
-            }
-        }
-        
-        // If all fail, try the default vec0
-        // Don't fail - just continue without vector search
+        // No-op: extension loaded at pool level via SqliteConnectOptions
         Ok(())
     }
 

@@ -1,9 +1,10 @@
 use anyhow::Result;
-use sqlx::{sqlite::SqlitePoolOptions, sqlite::SqliteConnection, SqlitePool, Row, Connection};
+use sqlx::{sqlite::SqlitePoolOptions, sqlite::SqliteConnection, SqlitePool, Row, Connection, sqlite::SqliteConnectOptions};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use serde_json::Value;
 use std::path::Path;
+use std::str::FromStr;
 
 // ===== MODULE-LEVEL STRUCTS (not inside impl blocks) =====
 
@@ -73,8 +74,11 @@ impl Database {
             std::env::current_dir()?.join(path)
         };
         
+        // Create pool with sqlite-vec extension loaded on every connection
         let db_url = format!("sqlite://{}?mode=rwc", abs_path.display());
-        let pool = SqlitePool::connect(&db_url).await?;
+        let connect_opts = SqliteConnectOptions::from_str(&db_url)?
+            .extension("/usr/local/lib/vec0.so");
+        let pool = SqlitePool::connect_with(connect_opts).await?;
         
         let db = Self { pool };
         db.migrate().await?;

@@ -325,6 +325,30 @@ impl PeaBrainServer {
             }, Some(vec!["plugin", "tool", "args"])),
             tool("plugin_list", "List loaded plugins", Map::new(), None),
             tool("plugin_discover", "Discover and load plugins from directories", Map::new(), None),
+
+            // v0.5: Plugin marketplace tools
+            tool("plugin_search", "Search plugins in registry", {
+                let mut p = Map::new();
+                p.insert("query".to_string(), json!({"type": "string"}));
+                p
+            }, Some(vec!["query"])),
+            tool("plugin_install", "Install a plugin from registry", {
+                let mut p = Map::new();
+                p.insert("name".to_string(), json!({"type": "string"}));
+                p.insert("version".to_string(), json!({"type": "string"}));
+                p
+            }, Some(vec!["name"])),
+            tool("plugin_uninstall", "Uninstall a plugin", {
+                let mut p = Map::new();
+                p.insert("name".to_string(), json!({"type": "string"}));
+                p
+            }, Some(vec!["name"])),
+            tool("plugin_registry_stats", "Get registry statistics", Map::new(), None),
+            tool("plugin_update_registry", "Update registry from remote", {
+                let mut p = Map::new();
+                p.insert("url".to_string(), json!({"type": "string"}));
+                p
+            }, None),
         ];
         Ok(json!({"tools": tools}))
     }
@@ -388,6 +412,13 @@ impl PeaBrainServer {
             "plugin_call" => self.handle_plugin_call(args).await,
             "plugin_list" => self.handle_plugin_list().await,
             "plugin_discover" => self.handle_plugin_discover().await,
+
+            // v0.5: Plugin marketplace
+            "plugin_search" => self.handle_plugin_search(args).await,
+            "plugin_install" => self.handle_plugin_install(args).await,
+            "plugin_uninstall" => self.handle_plugin_uninstall(args).await,
+            "plugin_registry_stats" => self.handle_plugin_registry_stats().await,
+            "plugin_update_registry" => self.handle_plugin_update_registry(args).await,
 
             _ => return Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }?;
@@ -824,9 +855,11 @@ impl PeaBrainServer {
     async fn handle_plugin_call(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let plugin = args["plugin"].as_str().unwrap();
+        // Normalize: strip .wasm extension if present
+        let plugin_name = plugin.strip_suffix(".wasm").unwrap_or(plugin);
         let tool = args["tool"].as_str().unwrap();
         let tool_args = args["args"].clone();
-        let result = brain.call_plugin_tool(plugin, tool, tool_args).await?;
+        let result = brain.call_plugin_tool(plugin_name, tool, tool_args).await?;
         Ok(result)
     }
 
@@ -840,6 +873,49 @@ impl PeaBrainServer {
         let brain = self.brain.lock().await;
         let loaded = brain.discover_plugins().await?;
         Ok(json!({"loaded": loaded}))
+    }
+
+    // v0.5: Plugin marketplace handlers
+    async fn handle_plugin_search(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let query = args["query"].as_str().unwrap_or("");
+        let results = brain.plugin_registry.search(query).await?;
+        Ok(json!({"plugins": results}))
+    }
+
+    async fn handle_plugin_install(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let name = args["name"].as_str().unwrap();
+        let version = args["version"].as_str();
+        let path = brain.plugin_registry.install(name, version).await?;
+        // Also load into plugin manager with registry JSON for builtin plugins
+        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or(name);
+        // Strip .wasm extension for registry lookup
+        let plugin_name = filename.strip_suffix(".wasm").unwrap_or(filename);
+        brain.plugin_manager.load_builtin_plugin(plugin_name, &brain.plugin_registry).await?;
+        Ok(json!({"ok": true, "path": path.display().to_string()}))
+    }
+
+    async fn handle_plugin_uninstall(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let name = args["name"].as_str().unwrap();
+        brain.plugin_registry.uninstall(name).await?;
+        // Also unload from plugin manager
+        brain.plugin_manager.unload_plugin(name).await;
+        Ok(json!({"ok": true}))
+    }
+
+    async fn handle_plugin_registry_stats(&self) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let stats = brain.plugin_registry.stats().await?;
+        Ok(stats)
+    }
+
+    async fn handle_plugin_update_registry(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let url = args.get("url").and_then(|v| v.as_str());
+        let count = brain.plugin_registry.update_registry(url).await?;
+        Ok(json!({"updated": count}))
     }
 }
 
