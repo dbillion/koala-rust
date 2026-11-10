@@ -1,0 +1,252 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-doc:
+    name: Build API Reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install system dependencies
+        run: |
+          sudo -S -p '' apt-get update
+          sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-doc-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build API docs
+        run: |
+          cargo doc --no-deps --document-private-items
+          crate_name=$(grep '^name =' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=$crate_name/\">" > target/doc/index.html
+
+      - name: Upload API docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: target/doc
+          retention-days: 30
+
+  litho-arch:
+    name: Build Architecture Docs (Litho)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo -S -p '' apt-get update
+          sudo -S -p '' apt-get install -y pkg-config libsqlite3-dev clang
+
+      - name: Install Litho (deepwiki-rs)
+        run: cargo install deepwiki-rs --locked
+
+      - name: Configure Litho
+        run: |
+          cat > litho.toml << 'EOF'
+          [project]
+          name = "koala-rust"
+          root = "."
+          
+          [output]
+          dir = "docs/architecture"
+          format = "markdown"
+          
+          [analysis]
+          include_patterns = ["src/**/*.rs"]
+          exclude_patterns = ["target/**", "tests/**", "examples/**", "plugins/**"]
+          
+          [diagrams]
+          c4_context = true
+          c4_container = true
+          c4_component = true
+          c4_code = true
+          mermaid = true
+          max_depth = 3
+          
+          [llm]
+          provider = "local"
+          model = "code-analysis"
+          EOF
+
+      - name: Generate architecture documentation
+        run: |
+          litho generate
+          ls -la docs/architecture/
+          find docs/architecture -name "*.md" | head -20
+
+      - name: Upload architecture docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: architecture-docs
+          path: docs/architecture
+          retention-days: 30
+
+  mdbook:
+    name: Build User Guides (mdBook)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: 'latest'
+
+      - name: Initialize mdBook (if not exists)
+        run: |
+          if [ ! -f "book.toml" ]; then
+            mdbook init --title "koala-rust Documentation" .
+          fi
+
+      - name: Create mdBook content structure
+        run: |
+          mkdir -p src
+          
+          if [ ! -f "src/SUMMARY.md" ]; then
+            cat > src/SUMMARY.md << 'EOF'
+# Summary
+
+- [Introduction](README.md)
+- [Quick Start](quickstart.md)
+- [Architecture](architecture.md)
+- [CLI Reference](cli.md)
+- [MCP Tools](mcp-tools.md)
+- [Vector Search](vector-search.md)
+- [CRDT Sync](crdt-sync.md)
+- [Embeddings](embeddings.md)
+- [Plugin System](plugins.md)
+  - [WASM Plugins](plugins/wasm.md)
+  - [Native Plugins](plugins/native.md)
+  - [Marketplace](plugins/marketplace.md)
+- [Hermes Integration](hermes.md)
+- [Building from Source](building.md)
+- [Cross-Platform Builds](cross-platform.md)
+- [Contributing](contributing.md)
+EOF
+          fi
+
+          for chapter in quickstart architecture cli mcp-tools vector-search crdt-sync embeddings plugins/wasm plugins/native plugins/marketplace hermes building cross-platform contributing; do
+            if [ ! -f "src/${chapter}.md" ]; then
+              title=$(echo "$chapter" | sed 's/-/ /g' | sed 's/\b\w/\U&/g')
+              cat > "src/${chapter}.md" << EOF
+# $title
+
+*Content to be added. See [README.md](../README.md) for now.*
+EOF
+            fi
+          done
+
+      - name: Build mdBook
+        run: mdbook build
+
+      - name: Upload mdBook artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdbook-docs
+          path: book
+          retention-days: 30
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [cargo-doc, litho-arch, mdbook]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download API docs
+        uses: actions/download-artifact@v4
+        with:
+          name: api-docs
+          path: deploy/api
+
+      - name: Download architecture docs
+        uses: actions/download-artifact@v4
+        with:
+          name: architecture-docs
+          path: deploy/architecture
+
+      - name: Download mdBook
+        uses: actions/download-artifact@v4
+        with:
+          name: mdbook-docs
+          path: deploy/book
+
+      - name: Prepare combined site
+        run: |
+          mkdir -p deploy/site
+          
+          cp -r deploy/book/* deploy/site/
+          
+          mkdir -p deploy/site/api
+          cp -r deploy/api/* deploy/site/api/
+          
+          mkdir -p deploy/site/architecture
+          cp -r deploy/architecture/* deploy/site/architecture/
+          
+          if [ ! -f deploy/site/index.html ]; then
+            cat > deploy/site/index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="0; url=./">
+    <title>koala-rust Documentation</title>
+</head>
+<body>
+    <p>Redirecting to <a href="./">koala-rust Documentation</a>...</p>
+</body>
+</html>
+EOF
+          fi
+          
+          find deploy/site -type f | head -30
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: deploy/site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
