@@ -61,11 +61,7 @@ pub struct Plugin {
 /// manager holds its lock, so sharing it across threads is sound. Wrapping it
 /// makes the `!Send`/`!Sync` raw pointer type explicit.
 #[derive(Debug, Clone, Copy)]
-pub struct PluginVTablePtr(
-    // Retained as the loaded plugin's vtable handle for the plugin's lifetime;
-    // dereferenced only through the FFI paths guarded by PluginManager's lock.
-    #[allow(dead_code)] *mut PluginVTable,
-);
+pub struct PluginVTablePtr(pub *mut PluginVTable);
 
 // SAFETY: the pointee is a static vtable inside the loaded library and
 // outlives the plugin; all dereferences are serialized by PluginManager's lock.
