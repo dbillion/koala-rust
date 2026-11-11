@@ -53,7 +53,7 @@ pub enum Activation {
 
 impl Activation {
     #[inline(always)]
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_name(s: &str) -> Self {
         match s {
             "sigmoid" => Activation::Sigmoid,
             "tanh" => Activation::Tanh,
@@ -86,7 +86,7 @@ impl<'de> Deserialize<'de> for Activation {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(Activation::from_str(&s))
+        Ok(Activation::from_name(&s))
     }
 }
 
@@ -141,7 +141,7 @@ impl NeuralModel {
             v_b2: Array1::zeros(output_dim),
             lr,
             mu: 0.9,
-            activation: Activation::from_str(activation),
+            activation: Activation::from_name(activation),
             step: 0,
             last_loss: None,
         })
@@ -234,8 +234,8 @@ impl NeuralModel {
         let z1 = self.w1.dot(x) + &self.b1;
         let a1 = z1.mapv(|z| self.activate(z));
         // a1: (H,), W2: (1, H) -> y: (1,)
-        let y = self.w2.dot(&a1) + &self.b2;
-        y
+
+        self.w2.dot(&a1) + &self.b2
     }
 
     pub fn predict(&self, xs: &[f32], ys: &[f32]) -> Vec<f32> {
@@ -276,7 +276,7 @@ impl NeuralModel {
         let mut last_loss = 0.0;
 
         // Pre-allocate buffers (matching FASM z1buf, a1buf, ybuf, gw1buf, gb1buf, gw2buf, gb2buf)
-        let mut z1 = Array2::zeros((n, h)); // Z1[N][H]
+        let mut z1: Array2<f32>; // Z1[N][H] - assigned per-iteration below
         let mut a1 = Array2::zeros((n, h)); // A1[N][H]
         let mut y = Array1::zeros(n); // Y[N]
         let mut dy = Array1::zeros(n); // dy[N]
@@ -477,7 +477,7 @@ impl NeuralModel {
             v_b2,
             lr: state.lr,
             mu: 0.9,
-            activation: Activation::from_str(&state.activation),
+            activation: Activation::from_name(&state.activation),
             step: state.step,
             last_loss: state.last_loss,
         })

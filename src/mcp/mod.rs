@@ -1,4 +1,6 @@
 use anyhow::Result;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
@@ -1159,7 +1161,7 @@ impl KoalaServer {
             _ => return Err(anyhow::anyhow!("Invalid doc_type: {}", doc_type_str)),
         };
         let changes = brain.sync_get_changes(doc_type).await?;
-        let changes_b64: Vec<String> = changes.iter().map(|c| base64::encode(c)).collect();
+        let changes_b64: Vec<String> = changes.iter().map(|c| STANDARD.encode(c)).collect();
         Ok(json!({"changes": changes_b64}))
     }
 
@@ -1184,7 +1186,7 @@ impl KoalaServer {
             .collect();
         let changes: Vec<Vec<u8>> = changes_b64
             .iter()
-            .filter_map(|s| base64::decode(s).ok())
+            .filter_map(|s| STANDARD.decode(s).ok())
             .collect();
         brain.sync_merge_changes(doc_type, &changes).await?;
         Ok(json!({"ok": true}))
@@ -1270,7 +1272,8 @@ impl KoalaServer {
         let name = args["name"].as_str().unwrap();
         brain.plugin_registry.uninstall(name).await?;
         // Also unload from plugin manager
-        brain.plugin_manager.unload_plugin(name).await;
+        // Unload failure during uninstall is non-fatal; the registry entry is already gone.
+        let _ = brain.plugin_manager.unload_plugin(name).await;
         Ok(json!({"ok": true}))
     }
 

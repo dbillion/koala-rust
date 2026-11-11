@@ -473,8 +473,6 @@ async fn main() -> Result<()> {
 
 /// Execute a CLI command
 async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) -> Result<()> {
-    use sqlx::Row;
-
     match cmd {
         // Facts
         Command::FactWrite { name, text } => {
