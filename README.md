@@ -349,7 +349,7 @@ cargo clippy
 # Release build (~8-10 min first time)
 cargo build --release
 
-# Binary at target/release/koala-rust (49 MB)
+# Binary at target/release/koala-rust
 ```
 
 ### Cross-Platform Builds (Local)
@@ -462,7 +462,7 @@ Install: `koala-rust plugin-install --path ./libplugin.so --type native`
 
 ## 🔒 Privacy & Security
 
-- **100% local** — no network calls except initial model download (~90 MB from HuggingFace)
+- **100% local** — no network calls except initial model download (~30 MB potion-base-8M from HuggingFace)
 - **WASM sandbox** — memory-limited, no host access
 - **Native plugins** — only from trusted sources (you verify)
 - **SQLite** — single file, easy to backup/encrypt
@@ -475,7 +475,7 @@ Install: `koala-rust plugin-install --path ./libplugin.so --type native`
 | Operation | Latency (typical) |
 |-----------|-------------------|
 | Fact write/read | < 1 ms |
-| Embedding (384-dim) | ~50 ms (CPU) |
+| Embedding (256-dim) | ~50 ms (CPU) |
 | Vector upsert | < 5 ms |
 | Vector search (k=10) | < 10 ms |
 | Sync merge (1000 ops) | ~100 ms |
@@ -518,5 +518,5 @@ MIT — see [LICENSE](LICENSE)
 - **koala-mcp Skill**: `skills/koala-mcp/` in this repo
 - **MCP Spec**: https://modelcontextprotocol.io
 - **sqlite-vec**: https://github.com/asg017/sqlite-vec
-- **Candle**: https://github.com/huggingface/candle
+- **Model2Vec**: https://github.com/MinishLab/model2vec-rs
 - **wasmtime**: https://github.com/bytecodealliance/wasmtime
