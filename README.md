@@ -2,14 +2,14 @@
 
 **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
 
-> A single binary (49 MB) that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+> A single binary that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
 
 ---
 
 ### 🙏 Attribution
 
 This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
-- Real local embeddings (Candle + all-MiniLM-L6-v2)
+- Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
 - Vector search (sqlite-vec HNSW)
 - CRDT-based multi-agent sync (VectorClock)
 - WASM/native plugin marketplace (wasmtime + libloading)
@@ -23,8 +23,8 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 | Feature | Description |
 |---------|-------------|
 | **Persistent Facts** | Versioned key-value storage with SQLite |
-| **Semantic Search** | HNSW vector search via `sqlite-vec` (384-dim embeddings) |
-| **Real Embeddings** | Local Candle + `all-MiniLM-L6-v2` (~90 MB, downloads once) |
+| **Semantic Search** | HNSW vector search via `sqlite-vec` (256-dim embeddings) |
+| **Real Embeddings** | Local Model2Vec + `potion-base-8M` (256-dim, ~30 MB, downloads from Hugging Face once on first use) |
 | **Knowledge Graph** | Entities, observations, relations with graph traversal |
 | **Task Management** | Structured tasks/notes with queries and updates |
 | **CRDT Sync** | Vector clocks + last-write-wins for multi-agent collaboration |
@@ -56,7 +56,7 @@ flowchart TB
         
         subgraph Vector["Vector Engine"]
             SQLITE_VEC[(sqlite-vec HNSW)]
-            EMBEDDINGS[Candle + all-MiniLM-L6-v2]
+            EMBEDDINGS[Model2Vec + potion-base-8M]
         end
         
         subgraph Sync["CRDT Sync"]
@@ -102,7 +102,7 @@ flowchart TB
     MARKETPLACE --> REGISTRY
     
     SQLITE_VEC --> KOALA_DB
-    EMBEDDINGS -->|~90 MB| MODEL_DIR
+    EMBEDDINGS -->|~30 MB, first run| MODEL_DIR
 
     style Agent fill:#e3f2fd
     style Server fill:#fff3e0
