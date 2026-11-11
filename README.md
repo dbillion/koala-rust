@@ -371,7 +371,7 @@ cross build --release --target x86_64-apple-darwin
 cross build --release --target aarch64-apple-darwin
 
 # Windows x86_64
-cross build --release --target x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 ### GitHub Actions (Auto on Tag)
@@ -397,7 +397,7 @@ git push origin v0.3.0
 | Linux ARM64 | `koala-rust-aarch64-unknown-linux-gnu` |
 | macOS x86_64 (Intel) | `koala-rust-x86_64-apple-darwin` |
 | macOS ARM64 (Apple Silicon) | `koala-rust-aarch64-apple-darwin` |
-| Windows x86_64 | `koala-rust-x86_64-pc-windows-gnu.exe` |
+| Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.exe` |
 
 Each release includes `SHA256SUMS.txt` for verification.
 

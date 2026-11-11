@@ -68,9 +68,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             use_cross: true
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
-            use_cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
           - target: x86_64-apple-darwin
             os: macos-latest
             use_cross: false
@@ -86,20 +86,19 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Install system dependencies for cross-compilation (Linux)
-        if: matrix.os == 'ubuntu-latest' && (matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-gnu')
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          fi
-          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
-            sudo apt-get install -y mingw-w64
-          fi
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Install system dependencies (macOS)
         if: matrix.os == 'macos-latest'
         run: |
           brew install sqlite3 pkg-config
+
+      - name: Install system dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install sqlite
 
       - name: Install cross
         if: matrix.use_cross
