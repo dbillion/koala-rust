@@ -51,6 +51,14 @@ pub enum Activation {
     LeakyRelu,
 }
 
+impl std::str::FromStr for Activation {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from_name(s))
+    }
+}
+
 impl Activation {
     #[inline(always)]
     pub fn from_name(s: &str) -> Self {
