@@ -1,15 +1,15 @@
 //! Multi-Agent Sync Module (v0.3) - Simplified CRDT Implementation
-//! 
+//!
 //! Provides basic conflict-free replicated data types for concurrent agent access.
 //! Uses a simple last-write-wins with vector clocks for now.
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Document types that can be synced
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -38,9 +38,8 @@ mod uuid_serde {
     where
         S: Serializer,
     {
-        let string_map: HashMap<String, u64> = map.iter()
-            .map(|(k, v)| (k.to_string(), *v))
-            .collect();
+        let string_map: HashMap<String, u64> =
+            map.iter().map(|(k, v)| (k.to_string(), *v)).collect();
         string_map.serialize(serializer)
     }
 
@@ -67,7 +66,10 @@ impl VectorClock {
 
     pub fn merge(&mut self, other: &VectorClock) {
         for (peer_id, time) in other.clocks.iter() {
-            self.clocks.entry(*peer_id).and_modify(|t| *t = (*t).max(*time)).or_insert(*time);
+            self.clocks
+                .entry(*peer_id)
+                .and_modify(|t| *t = (*t).max(*time))
+                .or_insert(*time);
         }
     }
 
@@ -147,14 +149,18 @@ impl SyncManager {
     where
         F: FnOnce(&DashMap<String, SyncEntry>) -> Result<()>,
     {
-        let doc = self.docs.get(&doc_type)
+        let doc = self
+            .docs
+            .get(&doc_type)
             .ok_or_else(|| anyhow::anyhow!("Document not found: {:?}", doc_type))?;
         f(&doc.entries)
     }
 
     /// Get current document state as JSON
     pub async fn get_state(&self, doc_type: SyncDocType) -> Result<serde_json::Value> {
-        let doc = self.docs.get(&doc_type)
+        let doc = self
+            .docs
+            .get(&doc_type)
             .ok_or_else(|| anyhow::anyhow!("Document not found: {:?}", doc_type))?;
 
         let mut map = serde_json::Map::new();
@@ -166,22 +172,25 @@ impl SyncManager {
 
     /// Get pending changes to send to peers
     pub async fn get_pending_changes(&self, doc_type: SyncDocType) -> Result<Vec<SyncEntry>> {
-        let doc = self.docs.get(&doc_type)
+        let doc = self
+            .docs
+            .get(&doc_type)
             .ok_or_else(|| anyhow::anyhow!("Document not found: {:?}", doc_type))?;
 
-        let changes: Vec<SyncEntry> = doc.entries.iter()
-            .map(|e| e.value().clone())
-            .collect();
+        let changes: Vec<SyncEntry> = doc.entries.iter().map(|e| e.value().clone()).collect();
         Ok(changes)
     }
 
     /// Merge changes from another peer
     pub async fn merge_changes(&self, doc_type: SyncDocType, changes: &[SyncEntry]) -> Result<()> {
-        let doc = self.docs.get(&doc_type)
+        let doc = self
+            .docs
+            .get(&doc_type)
             .ok_or_else(|| anyhow::anyhow!("Document not found: {:?}", doc_type))?;
 
         for change in changes {
-            doc.entries.entry(change.key.clone())
+            doc.entries
+                .entry(change.key.clone())
                 .and_modify(|existing| {
                     if change.vector_clock.happens_before(&existing.vector_clock) {
                         // Existing is newer, keep it
@@ -203,32 +212,38 @@ impl SyncManager {
     /// Sync facts: write_fact with CRDT
     pub async fn sync_write_fact(&self, name: &str, text: &str) -> Result<i64> {
         let id = uuid::Uuid::new_v4().as_u128() as i64;
-        
+
         self.apply_change(SyncDocType::Facts, |entries| {
             let mut vc = VectorClock::default();
             vc.increment(self.peer_id);
-            
-            entries.insert(name.to_string(), SyncEntry {
-                key: name.to_string(),
-                value: serde_json::json!({
-                    "id": id,
-                    "text": text,
-                    "timestamp": Utc::now().timestamp()
-                }),
-                vector_clock: vc,
-                peer_id: self.peer_id,
-                timestamp: Utc::now(),
-                deleted: false,
-            });
+
+            entries.insert(
+                name.to_string(),
+                SyncEntry {
+                    key: name.to_string(),
+                    value: serde_json::json!({
+                        "id": id,
+                        "text": text,
+                        "timestamp": Utc::now().timestamp()
+                    }),
+                    vector_clock: vc,
+                    peer_id: self.peer_id,
+                    timestamp: Utc::now(),
+                    deleted: false,
+                },
+            );
             Ok(())
-        }).await?;
+        })
+        .await?;
 
         Ok(id)
     }
 
     /// Sync read fact
     pub async fn sync_read_fact(&self, name: &str) -> Result<Option<(i64, String)>> {
-        let doc = self.docs.get(&SyncDocType::Facts)
+        let doc = self
+            .docs
+            .get(&SyncDocType::Facts)
             .ok_or_else(|| anyhow::anyhow!("Facts document not found"))?;
 
         if let Some(entry) = doc.entries.get(name) {
@@ -245,7 +260,9 @@ impl SyncManager {
 
     /// Sync list all facts
     pub async fn sync_list_facts(&self) -> Result<Vec<String>> {
-        let doc = self.docs.get(&SyncDocType::Facts)
+        let doc = self
+            .docs
+            .get(&SyncDocType::Facts)
             .ok_or_else(|| anyhow::anyhow!("Facts document not found"))?;
 
         let mut names = Vec::new();
@@ -259,39 +276,43 @@ impl SyncManager {
 
     /// Sync entities
     pub async fn sync_create_entity(
-        &self, 
-        name: &str, 
-        type_: Option<&str>, 
+        &self,
+        name: &str,
+        type_: Option<&str>,
         project: Option<&str>,
-        observations: &[String]
+        observations: &[String],
     ) -> Result<i64> {
         let id = uuid::Uuid::new_v4().as_u128() as i64;
-        
+
         self.apply_change(SyncDocType::Entities, |entries| {
             let mut vc = VectorClock::default();
             vc.increment(self.peer_id);
-            
+
             let mut obs_json = Vec::new();
             for obs in observations {
                 obs_json.push(serde_json::json!(obs));
             }
-            
-            entries.insert(name.to_string(), SyncEntry {
-                key: name.to_string(),
-                value: serde_json::json!({
-                    "id": id,
-                    "type": type_,
-                    "project": project,
-                    "observations": obs_json,
-                    "timestamp": Utc::now().timestamp()
-                }),
-                vector_clock: vc,
-                peer_id: self.peer_id,
-                timestamp: Utc::now(),
-                deleted: false,
-            });
+
+            entries.insert(
+                name.to_string(),
+                SyncEntry {
+                    key: name.to_string(),
+                    value: serde_json::json!({
+                        "id": id,
+                        "type": type_,
+                        "project": project,
+                        "observations": obs_json,
+                        "timestamp": Utc::now().timestamp()
+                    }),
+                    vector_clock: vc,
+                    peer_id: self.peer_id,
+                    timestamp: Utc::now(),
+                    deleted: false,
+                },
+            );
             Ok(())
-        }).await?;
+        })
+        .await?;
 
         Ok(id)
     }
@@ -329,14 +350,17 @@ mod tests {
     #[tokio::test]
     async fn test_sync_manager() {
         let manager = SyncManager::new(None).await.unwrap();
-        
-        let id = manager.sync_write_fact("test_key", "test_value").await.unwrap();
+
+        let id = manager
+            .sync_write_fact("test_key", "test_value")
+            .await
+            .unwrap();
         assert!(id > 0);
-        
+
         let fact = manager.sync_read_fact("test_key").await.unwrap();
         assert!(fact.is_some());
         assert_eq!(fact.unwrap().1, "test_value");
-        
+
         let facts = manager.sync_list_facts().await.unwrap();
         assert!(facts.contains(&"test_key".to_string()));
     }
@@ -345,13 +369,19 @@ mod tests {
     async fn test_multi_peer_sync() {
         let peer1 = SyncManager::new(Some(Uuid::new_v4())).await.unwrap();
         let peer2 = SyncManager::new(Some(Uuid::new_v4())).await.unwrap();
-        
-        peer1.sync_write_fact("shared_key", "from_peer1").await.unwrap();
-        
+
+        peer1
+            .sync_write_fact("shared_key", "from_peer1")
+            .await
+            .unwrap();
+
         let changes = peer1.get_pending_changes(SyncDocType::Facts).await.unwrap();
-        
-        peer2.merge_changes(SyncDocType::Facts, &changes).await.unwrap();
-        
+
+        peer2
+            .merge_changes(SyncDocType::Facts, &changes)
+            .await
+            .unwrap();
+
         let fact = peer2.sync_read_fact("shared_key").await.unwrap();
         assert!(fact.is_some());
         assert_eq!(fact.unwrap().1, "from_peer1");
