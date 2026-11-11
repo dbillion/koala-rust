@@ -211,7 +211,8 @@ impl SyncManager {
 
     /// Sync facts: write_fact with CRDT
     pub async fn sync_write_fact(&self, name: &str, text: &str) -> Result<i64> {
-        let id = uuid::Uuid::new_v4().as_u128() as i64;
+        // Mask to the low 63 bits so the id is always positive (u128->i64 cast can set the sign bit).
+        let id = ((uuid::Uuid::new_v4().as_u128() as u64 & 0x7FFF_FFFF_FFFF_FFFF) as i64).max(1);
 
         self.apply_change(SyncDocType::Facts, |entries| {
             let mut vc = VectorClock::default();
@@ -282,7 +283,8 @@ impl SyncManager {
         project: Option<&str>,
         observations: &[String],
     ) -> Result<i64> {
-        let id = uuid::Uuid::new_v4().as_u128() as i64;
+        // Mask to the low 63 bits so the id is always positive (u128->i64 cast can set the sign bit).
+        let id = ((uuid::Uuid::new_v4().as_u128() as u64 & 0x7FFF_FFFF_FFFF_FFFF) as i64).max(1);
 
         self.apply_change(SyncDocType::Entities, |entries| {
             let mut vc = VectorClock::default();

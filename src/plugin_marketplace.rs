@@ -51,6 +51,7 @@ impl PluginIndex {
 pub struct PluginRegistry {
     index: Arc<RwLock<PluginIndex>>,
     index_path: PathBuf,
+    #[allow(dead_code)]
     install_dir: PathBuf,
     wasm_module_dir: PathBuf,
     native_module_dir: PathBuf,
@@ -251,7 +252,7 @@ impl PluginRegistry {
         let index = self.index.read().await;
         let installed = std::fs::read_dir(&self.wasm_module_dir)?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "wasm"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "wasm"))
             .count();
 
         Ok(serde_json::json!({

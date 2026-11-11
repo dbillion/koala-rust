@@ -2,14 +2,14 @@
 
 **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
 
-> A single binary (49 MB) that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+> A single binary that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
 
 ---
 
 ### 🙏 Attribution
 
 This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
-- Real local embeddings (Candle + all-MiniLM-L6-v2)
+- Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
 - Vector search (sqlite-vec HNSW)
 - CRDT-based multi-agent sync (VectorClock)
 - WASM/native plugin marketplace (wasmtime + libloading)
@@ -23,8 +23,8 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 | Feature | Description |
 |---------|-------------|
 | **Persistent Facts** | Versioned key-value storage with SQLite |
-| **Semantic Search** | HNSW vector search via `sqlite-vec` (384-dim embeddings) |
-| **Real Embeddings** | Local Candle + `all-MiniLM-L6-v2` (~90 MB, downloads once) |
+| **Semantic Search** | HNSW vector search via `sqlite-vec` (256-dim embeddings) |
+| **Real Embeddings** | Local Model2Vec + `potion-base-8M` (256-dim, ~30 MB, downloads from Hugging Face once on first use) |
 | **Knowledge Graph** | Entities, observations, relations with graph traversal |
 | **Task Management** | Structured tasks/notes with queries and updates |
 | **CRDT Sync** | Vector clocks + last-write-wins for multi-agent collaboration |
@@ -56,7 +56,7 @@ flowchart TB
         
         subgraph Vector["Vector Engine"]
             SQLITE_VEC[(sqlite-vec HNSW)]
-            EMBEDDINGS[Candle + all-MiniLM-L6-v2]
+            EMBEDDINGS[Model2Vec + potion-base-8M]
         end
         
         subgraph Sync["CRDT Sync"]
@@ -102,7 +102,7 @@ flowchart TB
     MARKETPLACE --> REGISTRY
     
     SQLITE_VEC --> KOALA_DB
-    EMBEDDINGS -->|~90 MB| MODEL_DIR
+    EMBEDDINGS -->|~30 MB, first run| MODEL_DIR
 
     style Agent fill:#e3f2fd
     style Server fill:#fff3e0
@@ -349,7 +349,7 @@ cargo clippy
 # Release build (~8-10 min first time)
 cargo build --release
 
-# Binary at target/release/koala-rust (49 MB)
+# Binary at target/release/koala-rust
 ```
 
 ### Cross-Platform Builds (Local)
@@ -371,7 +371,7 @@ cross build --release --target x86_64-apple-darwin
 cross build --release --target aarch64-apple-darwin
 
 # Windows x86_64
-cross build --release --target x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 ### GitHub Actions (Auto on Tag)
@@ -397,7 +397,7 @@ git push origin v0.3.0
 | Linux ARM64 | `koala-rust-aarch64-unknown-linux-gnu` |
 | macOS x86_64 (Intel) | `koala-rust-x86_64-apple-darwin` |
 | macOS ARM64 (Apple Silicon) | `koala-rust-aarch64-apple-darwin` |
-| Windows x86_64 | `koala-rust-x86_64-pc-windows-gnu.exe` |
+| Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.exe` |
 
 Each release includes `SHA256SUMS.txt` for verification.
 
@@ -462,7 +462,7 @@ Install: `koala-rust plugin-install --path ./libplugin.so --type native`
 
 ## 🔒 Privacy & Security
 
-- **100% local** — no network calls except initial model download (~90 MB from HuggingFace)
+- **100% local** — no network calls except initial model download (~30 MB potion-base-8M from HuggingFace)
 - **WASM sandbox** — memory-limited, no host access
 - **Native plugins** — only from trusted sources (you verify)
 - **SQLite** — single file, easy to backup/encrypt
@@ -475,7 +475,7 @@ Install: `koala-rust plugin-install --path ./libplugin.so --type native`
 | Operation | Latency (typical) |
 |-----------|-------------------|
 | Fact write/read | < 1 ms |
-| Embedding (384-dim) | ~50 ms (CPU) |
+| Embedding (256-dim) | ~50 ms (CPU) |
 | Vector upsert | < 5 ms |
 | Vector search (k=10) | < 10 ms |
 | Sync merge (1000 ops) | ~100 ms |
@@ -518,5 +518,5 @@ MIT — see [LICENSE](LICENSE)
 - **koala-mcp Skill**: `skills/koala-mcp/` in this repo
 - **MCP Spec**: https://modelcontextprotocol.io
 - **sqlite-vec**: https://github.com/asg017/sqlite-vec
-- **Candle**: https://github.com/huggingface/candle
+- **Model2Vec**: https://github.com/MinishLab/model2vec-rs
 - **wasmtime**: https://github.com/bytecodealliance/wasmtime

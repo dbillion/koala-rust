@@ -56,17 +56,27 @@ jobs:
           ./target/release/koala-rust --help
 
   cross-check:
-    name: Cross-platform Check
-    runs-on: ubuntu-latest
+    name: Cross-platform Check (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - aarch64-unknown-linux-gnu
-          - x86_64-apple-darwin
-          - aarch64-apple-darwin
-          - x86_64-pc-windows-gnu
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            use_cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            use_cross: false
     steps:
       - uses: actions/checkout@v4
 
@@ -75,18 +85,23 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - name: Install system dependencies for cross-compilation
-        if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'x86_64-pc-windows-gnu'
+      - name: Install system dependencies for cross-compilation (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          fi
-          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
-            sudo apt-get install -y mingw-w64
-          fi
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install sqlite3 pkg-config
+
+      - name: Install system dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: choco install sqlite
 
       - name: Install cross
+        if: matrix.use_cross
         run: cargo install cross --locked
 
       - name: Cache cargo
@@ -99,4 +114,9 @@ jobs:
           key: cross-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cross build check
+        if: matrix.use_cross
         run: cross check --target ${{ matrix.target }}
+
+      - name: Native build check
+        if: "!matrix.use_cross"
+        run: cargo check --target ${{ matrix.target }}
