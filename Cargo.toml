@@ -42,6 +42,8 @@ parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
+
+[target.'cfg(not(windows))'.dependencies]
 openssl = { version = "0.10", features = ["vendored"] }
 
 # v0.5: Plugin marketplace
