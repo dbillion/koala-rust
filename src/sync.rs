@@ -34,7 +34,7 @@ mod uuid_serde {
     use std::collections::HashMap;
     use uuid::Uuid;
 
-    pub fn serialize<S>(map: &HashMap<Uuid, u64>, serializer: S) -> Result<S::Ok, S::Error>
+    pub(super) fn serialize<S>(map: &HashMap<Uuid, u64>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -44,7 +44,7 @@ mod uuid_serde {
         string_map.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<Uuid, u64>, D::Error>
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<Uuid, u64>, D::Error>
     where
         D: Deserializer<'de>,
     {

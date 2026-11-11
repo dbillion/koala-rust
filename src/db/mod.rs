@@ -1,5 +1,5 @@
 use anyhow::Result;
-use sqlx::{SqlitePool, Row, Connection, sqlite::SqliteConnectOptions};
+use sqlx::{SqlitePool, Row, Column, sqlite::SqliteConnectOptions};
 use chrono::{DateTime, Utc};
 use std::path::Path;
 use std::str::FromStr;
@@ -611,5 +611,22 @@ impl Database {
             usage_tracked: 0,
             pending_flush: false,
         })
+    }
+
+    /// Execute raw SQL query
+    pub async fn raw_sql(&self, query: &str) -> Result<Vec<serde_json::Value>> {
+        let rows = sqlx::query(query).fetch_all(&self.pool).await?;
+        let mut results = Vec::new();
+        for row in rows {
+            let mut obj = serde_json::Map::new();
+            let columns = row.columns();
+            for (i, col) in columns.iter().enumerate() {
+                let col_name = col.name();
+                let value: serde_json::Value = row.try_get(i).unwrap_or(serde_json::Value::Null);
+                obj.insert(col_name.to_string(), value);
+            }
+            results.push(serde_json::Value::Object(obj));
+        }
+        Ok(results)
     }
 }
