@@ -18,11 +18,12 @@ fn main() {
             .join(format!("{}.wat", name));
         let wasm_path = out_path.join(format!("{}.wasm", name));
 
-        let wat_source =
-            fs::read_to_string(&wat_path).expect(&format!("Failed to read {}", wat_path.display()));
-        let wasm_bytes = wat::parse_str(&wat_source).expect(&format!("Failed to parse {}", name));
+        let wat_source = fs::read_to_string(&wat_path)
+            .unwrap_or_else(|_| panic!("Failed to read {}", wat_path.display()));
+        let wasm_bytes =
+            wat::parse_str(&wat_source).unwrap_or_else(|_| panic!("Failed to parse {}", name));
         fs::write(&wasm_path, &wasm_bytes)
-            .expect(&format!("Failed to write {}", wasm_path.display()));
+            .unwrap_or_else(|_| panic!("Failed to write {}", wasm_path.display()));
 
         println!("cargo:rerun-if-changed={}", wat_path.display());
         println!(

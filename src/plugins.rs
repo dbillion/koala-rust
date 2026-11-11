@@ -55,6 +55,19 @@ pub struct Plugin {
     pub state: PluginState,
 }
 
+/// Opaque pointer to a native plugin's vtable (from the plugin's `plugin_init`
+/// symbol). The vtable is a static structure inside the loaded `Library`
+/// (which is Send + Sync); the pointer is only dereferenced while the plugin
+/// manager holds its lock, so sharing it across threads is sound. Wrapping it
+/// makes the `!Send`/`!Sync` raw pointer type explicit.
+#[derive(Debug, Clone, Copy)]
+pub struct PluginVTablePtr(pub *mut PluginVTable);
+
+// SAFETY: the pointee is a static vtable inside the loaded library and
+// outlives the plugin; all dereferences are serialized by PluginManager's lock.
+unsafe impl Send for PluginVTablePtr {}
+unsafe impl Sync for PluginVTablePtr {}
+
 /// Plugin type
 #[derive(Debug, Clone)]
 pub enum PluginType {
@@ -64,7 +77,7 @@ pub enum PluginType {
     },
     Native {
         library: Arc<Library>,
-        init_fn: *mut PluginVTable,
+        init_fn: PluginVTablePtr,
     },
 }
 
@@ -95,17 +108,33 @@ pub struct PluginVTable {
     pub drop: unsafe extern "C" fn(*mut std::ffi::c_void),
 }
 
+/// WASM host callback function types (extracted to keep `WasmHost` readable).
+type DbReadFn = Arc<dyn Fn(&str) -> Result<Value> + Send + Sync>;
+type DbWriteFn = Arc<dyn Fn(&str, &Value) -> Result<()> + Send + Sync>;
+type ModelPredictFn = Arc<dyn Fn(&[f32], &[f32]) -> Result<Vec<f32>> + Send + Sync>;
+type VectorSearchFn = Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>;
+type FactWriteFn = Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>;
+type FactReadFn = Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>;
+type EntityCreateFn =
+    Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>;
+type TaskCreateFn = Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>;
+
 /// WASM host functions for plugins
 pub struct WasmHost {
-    pub db_read: Arc<dyn Fn(&str) -> Result<Value> + Send + Sync>,
-    pub db_write: Arc<dyn Fn(&str, &Value) -> Result<()> + Send + Sync>,
-    pub model_predict: Arc<dyn Fn(&[f32], &[f32]) -> Result<Vec<f32>> + Send + Sync>,
-    pub vector_search: Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>,
-    pub fact_write: Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>,
-    pub fact_read: Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>,
-    pub entity_create:
-        Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>,
-    pub task_create: Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>,
+    pub db_read: DbReadFn,
+    pub db_write: DbWriteFn,
+    pub model_predict: ModelPredictFn,
+    pub vector_search: VectorSearchFn,
+    pub fact_write: FactWriteFn,
+    pub fact_read: FactReadFn,
+    pub entity_create: EntityCreateFn,
+    pub task_create: TaskCreateFn,
+}
+
+impl Default for WasmHost {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WasmHost {
@@ -122,63 +151,42 @@ impl WasmHost {
         }
     }
 
-    pub fn with_db_read(mut self, f: Arc<dyn Fn(&str) -> Result<Value> + Send + Sync>) -> Self {
+    pub fn with_db_read(mut self, f: DbReadFn) -> Self {
         self.db_read = f;
         self
     }
 
-    pub fn with_db_write(
-        mut self,
-        f: Arc<dyn Fn(&str, &Value) -> Result<()> + Send + Sync>,
-    ) -> Self {
+    pub fn with_db_write(mut self, f: DbWriteFn) -> Self {
         self.db_write = f;
         self
     }
 
-    pub fn with_model_predict(
-        mut self,
-        f: Arc<dyn Fn(&[f32], &[f32]) -> Result<Vec<f32>> + Send + Sync>,
-    ) -> Self {
+    pub fn with_model_predict(mut self, f: ModelPredictFn) -> Self {
         self.model_predict = f;
         self
     }
 
-    pub fn with_vector_search(
-        mut self,
-        f: Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>,
-    ) -> Self {
+    pub fn with_vector_search(mut self, f: VectorSearchFn) -> Self {
         self.vector_search = f;
         self
     }
 
-    pub fn with_fact_write(
-        mut self,
-        f: Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>,
-    ) -> Self {
+    pub fn with_fact_write(mut self, f: FactWriteFn) -> Self {
         self.fact_write = f;
         self
     }
 
-    pub fn with_fact_read(
-        mut self,
-        f: Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>,
-    ) -> Self {
+    pub fn with_fact_read(mut self, f: FactReadFn) -> Self {
         self.fact_read = f;
         self
     }
 
-    pub fn with_entity_create(
-        mut self,
-        f: Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>,
-    ) -> Self {
+    pub fn with_entity_create(mut self, f: EntityCreateFn) -> Self {
         self.entity_create = f;
         self
     }
 
-    pub fn with_task_create(
-        mut self,
-        f: Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>,
-    ) -> Self {
+    pub fn with_task_create(mut self, f: TaskCreateFn) -> Self {
         self.task_create = f;
         self
     }
@@ -249,13 +257,10 @@ impl PluginManager {
         }
 
         let mut tools_vec = Vec::with_capacity(tool_count as usize);
-        let tools_ptr = {
-            let mut v = Vec::with_capacity(tool_count as usize);
-            for _ in 0..tool_count as usize {
-                v.push(unsafe { std::mem::zeroed::<ToolDefinition>() });
-            }
-            v.as_mut_ptr()
-        };
+        let mut v: Vec<std::mem::MaybeUninit<ToolDefinition>> = (0..tool_count as usize)
+            .map(|_| std::mem::MaybeUninit::uninit())
+            .collect();
+        let tools_ptr = v.as_mut_ptr() as *mut ToolDefinition;
         let result = unsafe { (vtable.get_tools)(vtable.user_data, tools_ptr, &mut tool_count) };
         if result != 0 {
             anyhow::bail!("Failed to get tools");
@@ -279,7 +284,7 @@ impl PluginManager {
             manifest,
             plugin_type: PluginType::Native {
                 library: Arc::new(library),
-                init_fn: vtable_ptr as *mut _,
+                init_fn: PluginVTablePtr(vtable_ptr),
             },
             state: PluginState {
                 enabled: true,
@@ -567,9 +572,7 @@ impl PluginManager {
         // In production, use jsonschema crate
 
         let result = match &plugin.plugin_type {
-            PluginType::Native { library: _, .. } => {
-                self.call_native_tool(&plugin, tool_name, args).await?
-            }
+            PluginType::Native { .. } => self.call_native_tool(&plugin, tool_name, args).await?,
             PluginType::Wasm {
                 module: _,
                 instance_id,
@@ -638,7 +641,7 @@ impl PluginManager {
                 let path = entry.path();
                 if path
                     .extension()
-                    .map_or(false, |e| e == "so" || e == "dll" || e == "dylib")
+                    .is_some_and(|e| e == "so" || e == "dll" || e == "dylib")
                 {
                     if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                         if self.load_native_plugin(name).await.is_ok() {
@@ -654,7 +657,7 @@ impl PluginManager {
             for entry in std::fs::read_dir(&self.wasm_module_dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.extension().map_or(false, |e| e == "wasm") {
+                if path.extension().is_some_and(|e| e == "wasm") {
                     if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                         if self.load_wasm_plugin(name, None, None).await.is_ok() {
                             loaded.push(name.to_string());

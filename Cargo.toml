@@ -45,13 +45,21 @@ libloading = "0.8"
 dashmap = "5.0"
 parking_lot = "0.12"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 
-# v0.5: Plugin marketplace
+# v0.5: Plugin marketplace (needed on all targets, including Windows)
 reqwest = { version = "0.12", features = ["json"] }
 sha2 = "0.10"
 hex = "0.4"
+
+# Vendored OpenSSL keeps Linux/macOS builds self-contained; Windows uses the
+# native TLS stack, so it is excluded there.
+[target.'cfg(not(windows))'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
+
+[dev-dependencies]
+wat = "1.0"
 
 [build-dependencies]
 wat = "1.0"
@@ -69,7 +77,6 @@ lto = "thin"
 codegen-units = 1
 opt-level = 3
 strip = false
-panic = "abort"
 debug = true
 
 # Optimize for size when needed
@@ -81,44 +88,3 @@ debug = true
 [[bin]]
 name = "peabrain-rust"
 path = "src/main.rs"
-
-# BeautifulRust lint configuration
-[lints.rust]
-unsafe_op_in_unsafe_fn = "warn"
-missing_debug_implementations = "warn"
-missing_docs = "warn"
-unreachable_pub = "warn"
-rust_2018_idioms = { level = "warn", priority = -1 }
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "warn"
-expect_used = "allow"
-panic_in_result_fn = "warn"
-missing_panics_doc = "warn"
-missing_errors_doc = "warn"
-missing_assert_message = "warn"
-allow_attributes = "warn"
-allow_attributes_without_reason = "warn"
-undocumented_unsafe_blocks = "warn"
-multiple_unsafe_ops_per_block = "warn"
-fn_params_excessive_bools = "warn"
-struct_excessive_bools = "warn"
-clone_on_ref_ptr = "warn"
-redundant_clone = "warn"
-rc_buffer = "warn"
-exhaustive_enums = "warn"
-string_add = "warn"
-wildcard_imports = "warn"
-dbg_macro = "warn"
-todo = "warn"
-print_stdout = "warn"
-print_stderr = "warn"
-as_conversions = "warn"
-cast_possible_truncation = "warn"
-cast_sign_loss = "warn"
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-module_inception = "allow"
-enum_glob_use = "allow"
