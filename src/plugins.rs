@@ -8,12 +8,10 @@ use dashmap::DashMap;
 use libloading::{Library, Symbol};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{info, warn};
-use wasmtime::{Config, Engine, Linker, Module, Store, Val, ValType, Func, Caller, Memory, Extern, Trap};
+use tracing::info;
+use wasmtime::{Config, Engine, Linker, Module, Store, Caller};
 
 /// Plugin metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,7 +205,7 @@ impl PluginManager {
         }
 
         let mut tools_vec = Vec::with_capacity(tool_count as usize);
-        let mut tools_ptr = {
+        let tools_ptr = {
             let mut v = Vec::with_capacity(tool_count as usize);
             for _ in 0..tool_count as usize {
                 v.push(unsafe { std::mem::zeroed::<ToolDefinition>() });
@@ -312,7 +310,7 @@ impl PluginManager {
                 // Read tools from WASM memory
                 let tools_data = &memory.data(&store)[tools_ptr_out as usize..tools_ptr_out as usize + tools_len as usize];
                 eprintln!("DEBUG: Tools data read: {} bytes, content: {}", tools_data.len(), String::from_utf8_lossy(tools_data));
-                let tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
+                let _tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
 
                 // Get manifest
                 let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
@@ -348,45 +346,45 @@ impl PluginManager {
         let host = self.wasm_host.clone();
 
         // db_read
-        linker.func_wrap("host", "db_read", move |caller: Caller<'_, ()>, ptr: i32, len: i32, out_ptr: i32, out_len: i32| -> i32 {
+        linker.func_wrap("host", "db_read", move |_caller: Caller<'_, ()>, _ptr: i32, _len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
             // Implementation would read from caller memory
             0
         })?;
 
         // fact_write
-        let host_fw = host.fact_write.clone();
-        linker.func_wrap("host", "fact_write", move |name_ptr: i32, name_len: i32, text_ptr: i32, text_len: i32| -> i64 {
+        let _host_fw = host.fact_write.clone();
+        linker.func_wrap("host", "fact_write", move |_name_ptr: i32, _name_len: i32, _text_ptr: i32, _text_len: i32| -> i64 {
             // Would need to read from WASM memory
             0
         })?;
 
         // fact_read
-        let host_fr = host.fact_read.clone();
-        linker.func_wrap("host", "fact_read", move |name_ptr: i32, name_len: i32, out_ptr: i32, out_len: i32| -> i32 {
+        let _host_fr = host.fact_read.clone();
+        linker.func_wrap("host", "fact_read", move |_name_ptr: i32, _name_len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
             0
         })?;
 
         // entity_create
-        let host_ec = host.entity_create.clone();
-        linker.func_wrap("host", "entity_create", move |name_ptr: i32, name_len: i32, type_ptr: i32, type_len: i32, project_ptr: i32, project_len: i32, obs_ptr: i32, obs_len: i32| -> i64 {
+        let _host_ec = host.entity_create.clone();
+        linker.func_wrap("host", "entity_create", move |_name_ptr: i32, _name_len: i32, _type_ptr: i32, _type_len: i32, _project_ptr: i32, _project_len: i32, _obs_ptr: i32, _obs_len: i32| -> i64 {
             0
         })?;
 
         // task_create
-        let host_tc = host.task_create.clone();
-        linker.func_wrap("host", "task_create", move |title_ptr: i32, title_len: i32, body_ptr: i32, body_len: i32, status_ptr: i32, status_len: i32, project_ptr: i32, project_len: i32, priority_ptr: i32, priority_len: i32| -> i64 {
+        let _host_tc = host.task_create.clone();
+        linker.func_wrap("host", "task_create", move |_title_ptr: i32, _title_len: i32, _body_ptr: i32, _body_len: i32, _status_ptr: i32, _status_len: i32, _project_ptr: i32, _project_len: i32, _priority_ptr: i32, _priority_len: i32| -> i64 {
             0
         })?;
 
         // model_predict
-        let host_mp = host.model_predict.clone();
-        linker.func_wrap("host", "model_predict", move |xs_ptr: i32, xs_len: i32, ys_ptr: i32, ys_len: i32, out_ptr: i32, out_len: i32| -> i32 {
+        let _host_mp = host.model_predict.clone();
+        linker.func_wrap("host", "model_predict", move |_xs_ptr: i32, _xs_len: i32, _ys_ptr: i32, _ys_len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
             0
         })?;
 
         // vector_search
-        let host_vs = host.vector_search.clone();
-        linker.func_wrap("host", "vector_search", move |query_ptr: i32, query_len: i32, k: i32, out_ptr: i32, out_len: i32| -> i32 {
+        let _host_vs = host.vector_search.clone();
+        linker.func_wrap("host", "vector_search", move |_query_ptr: i32, _query_len: i32, _k: i32, _out_ptr: i32, _out_len: i32| -> i32 {
             0
         })?;
 
@@ -403,7 +401,7 @@ impl PluginManager {
         }
 
         // Find tool definition
-        let tool_def = plugin.manifest.tools.iter()
+        let _tool_def = plugin.manifest.tools.iter()
             .find(|t| t.name == tool_name)
             .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
 
@@ -411,10 +409,10 @@ impl PluginManager {
         // In production, use jsonschema crate
 
         let result = match &plugin.plugin_type {
-            PluginType::Native { library, .. } => {
+            PluginType::Native { library: _, .. } => {
                 self.call_native_tool(&plugin, tool_name, args).await?
             }
-            PluginType::Wasm { module, instance_id } => {
+            PluginType::Wasm { module: _, instance_id } => {
                 self.call_wasm_tool(&plugin, tool_name, args, *instance_id).await?
             }
         };
@@ -423,13 +421,13 @@ impl PluginManager {
         Ok(result)
     }
 
-    async fn call_native_tool(&self, plugin: &Plugin, tool_name: &str, args: Value) -> Result<Value> {
+    async fn call_native_tool(&self, _plugin: &Plugin, _tool_name: &str, _args: Value) -> Result<Value> {
         // Native plugin calling would use the vtable
         // Simplified for now
         Ok(Value::Null)
     }
 
-    async fn call_wasm_tool(&self, plugin: &Plugin, tool_name: &str, args: Value, instance_id: u64) -> Result<Value> {
+    async fn call_wasm_tool(&self, _plugin: &Plugin, _tool_name: &str, _args: Value, _instance_id: u64) -> Result<Value> {
         // WASM tool calling
         // Simplified for now
         Ok(Value::Null)

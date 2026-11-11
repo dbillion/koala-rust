@@ -9,7 +9,7 @@ pub mod plugin_marketplace;
 
 use db::Database;
 use model::{NeuralModel, ModelState};
-use vector::{VectorEngine, VectorConfig, VECTOR_DIM};
+use vector::{VectorEngine, VectorConfig};
 use sync::SyncManager;
 use embeddings::{EmbeddingManager, EmbeddingConfig};
 use plugins::{PluginManager, WasmHost};
@@ -50,15 +50,15 @@ impl Koala {
 
         // Initialize plugin manager
         let wasm_host = WasmHost::new()
-            .with_fact_write(Arc::new(|name, text| {
+            .with_fact_write(Arc::new(|_name, _text| {
                 // This would need access to db - simplified for now
                 Ok(0)
             }))
-            .with_fact_read(Arc::new(|name| Ok(None)))
-            .with_entity_create(Arc::new(|name, type_, project, obs| Ok(0)))
-            .with_task_create(Arc::new(|title, body, status, project, priority| Ok(0)))
-            .with_model_predict(Arc::new(|xs, ys| Ok(Vec::new())))
-            .with_vector_search(Arc::new(|query, k| Ok(Vec::new())));
+            .with_fact_read(Arc::new(|_name| Ok(None)))
+            .with_entity_create(Arc::new(|_name, _type_, _project, _obs| Ok(0)))
+            .with_task_create(Arc::new(|_title, _body, _status, _project, _priority| Ok(0)))
+            .with_model_predict(Arc::new(|_xs, _ys| Ok(Vec::new())))
+            .with_vector_search(Arc::new(|_query, _k| Ok(Vec::new())));
 
         let plugin_manager = Arc::new(PluginManager::new(
             wasm_host,
@@ -89,7 +89,7 @@ impl Koala {
         Ok(())
     }
 
-    pub async fn train_model(&mut self, xs: &[f32], ys: &[f32], targets: &[f32], lr: f32, steps: u32) -> Result<f32> {
+    pub async fn train_model(&mut self, xs: &[f32], ys: &[f32], targets: &[f32], _lr: f32, steps: u32) -> Result<f32> {
         let mut model_guard = self.model.lock().await;
         let model = model_guard.as_mut().ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;
         model.train_batch(xs, ys, targets, steps)
