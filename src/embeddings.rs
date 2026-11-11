@@ -61,7 +61,10 @@ impl EmbeddingManager {
                 None, // normalize_embeddings
                 None, // subfolder_in_repo
             )?;
-            info!("Model2Vec model loaded successfully (dim={})", EMBEDDING_DIM);
+            info!(
+                "Model2Vec model loaded successfully (dim={})",
+                EMBEDDING_DIM
+            );
             *model_guard = Some(model);
         }
         Ok(())
@@ -116,7 +119,8 @@ impl EmbeddingManager {
 
             // Fill in results and cache
             for (idx, embedding) in uncached_indices.into_iter().zip(embeddings) {
-                self.cache.insert(uncached_texts[idx].clone(), embedding.clone());
+                self.cache
+                    .insert(uncached_texts[idx].clone(), embedding.clone());
                 results[idx] = embedding;
             }
         }
@@ -156,7 +160,10 @@ impl EmbeddingManager {
     /// Get model info
     pub async fn model_info(&self) -> Result<String> {
         self.init().await?;
-        Ok(format!("Model2Vec: {} (dim={})", self.config.model_name, EMBEDDING_DIM))
+        Ok(format!(
+            "Model2Vec: {} (dim={})",
+            self.config.model_name, EMBEDDING_DIM
+        ))
     }
 }
 
@@ -167,7 +174,10 @@ pub struct RagPipeline {
 }
 
 impl RagPipeline {
-    pub fn new(embedding_manager: Arc<EmbeddingManager>, vector_engine: Arc<crate::vector::VectorEngine>) -> Self {
+    pub fn new(
+        embedding_manager: Arc<EmbeddingManager>,
+        vector_engine: Arc<crate::vector::VectorEngine>,
+    ) -> Self {
         Self {
             embedding_manager,
             vector_engine,
@@ -175,22 +185,42 @@ impl RagPipeline {
     }
 
     /// Add document to RAG index
-    pub async fn add_document(&self, doc_id: i64, text: &str, _metadata: serde_json::Value) -> Result<()> {
+    pub async fn add_document(
+        &self,
+        doc_id: i64,
+        text: &str,
+        _metadata: serde_json::Value,
+    ) -> Result<()> {
         let embedding = self.embedding_manager.embed_cached(text).await?;
-        self.vector_engine.upsert_fact_embedding(doc_id, &embedding).await?;
+        self.vector_engine
+            .upsert_fact_embedding(doc_id, &embedding)
+            .await?;
         Ok(())
     }
 
     /// Search relevant documents
-    pub async fn search(&self, query: &str, k: usize) -> Result<Vec<crate::vector::VectorSearchResult>> {
+    pub async fn search(
+        &self,
+        query: &str,
+        k: usize,
+    ) -> Result<Vec<crate::vector::VectorSearchResult>> {
         let query_embedding = self.embedding_manager.embed_cached(query).await?;
-        self.vector_engine.search_facts(&query_embedding, k, None).await
+        self.vector_engine
+            .search_facts(&query_embedding, k, None)
+            .await
     }
 
     /// Hybrid search: vector + keyword
-    pub async fn hybrid_search(&self, query: &str, k: usize, keyword_filter: Option<&str>) -> Result<Vec<crate::vector::VectorSearchResult>> {
+    pub async fn hybrid_search(
+        &self,
+        query: &str,
+        k: usize,
+        keyword_filter: Option<&str>,
+    ) -> Result<Vec<crate::vector::VectorSearchResult>> {
         let query_embedding = self.embedding_manager.embed_cached(query).await?;
-        self.vector_engine.search_facts(&query_embedding, k, keyword_filter).await
+        self.vector_engine
+            .search_facts(&query_embedding, k, keyword_filter)
+            .await
     }
 }
 
@@ -235,19 +265,41 @@ mod tests {
         let manager = EmbeddingManager::new(config);
 
         // Semantically similar phrases should have higher cosine similarity
-        let emb1 = manager.embed_cached("how to configure vector search").await.unwrap();
-        let emb2 = manager.embed_cached("how do I set up vector search").await.unwrap();
-        let emb3 = manager.embed_cached("the cat sat on the mat").await.unwrap();
+        let emb1 = manager
+            .embed_cached("how to configure vector search")
+            .await
+            .unwrap();
+        let emb2 = manager
+            .embed_cached("how do I set up vector search")
+            .await
+            .unwrap();
+        let emb3 = manager
+            .embed_cached("the cat sat on the mat")
+            .await
+            .unwrap();
 
         let sim_12 = cosine_similarity(&emb1, &emb2);
         let sim_13 = cosine_similarity(&emb1, &emb3);
         let sim_23 = cosine_similarity(&emb2, &emb3);
 
         // Similar meaning should score higher than unrelated
-        assert!(sim_12 > sim_13, "semantically similar should score higher: {} vs {}", sim_12, sim_13);
-        assert!(sim_12 > sim_23, "semantically similar should score higher: {} vs {}", sim_12, sim_23);
-        
-        info!("Similarity similar: {}, unrelated1: {}, unrelated2: {}", sim_12, sim_13, sim_23);
+        assert!(
+            sim_12 > sim_13,
+            "semantically similar should score higher: {} vs {}",
+            sim_12,
+            sim_13
+        );
+        assert!(
+            sim_12 > sim_23,
+            "semantically similar should score higher: {} vs {}",
+            sim_12,
+            sim_23
+        );
+
+        info!(
+            "Similarity similar: {}, unrelated1: {}, unrelated2: {}",
+            sim_12, sim_13, sim_23
+        );
     }
 }
 

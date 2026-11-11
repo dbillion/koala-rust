@@ -48,7 +48,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-use koala_rust::{Koala, mcp::run_stdio};
+use koala_rust::{mcp::run_stdio, Koala};
 
 /// Output format for CLI commands
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -61,7 +61,11 @@ enum OutputFormat {
 
 /// Main CLI arguments
 #[derive(Parser, Debug)]
-#[command(name = "koala-rust", version, about = "Koala MCP Server & CLI in Rust")]
+#[command(
+    name = "koala-rust",
+    version,
+    about = "Koala MCP Server & CLI in Rust"
+)]
 struct Args {
     /// State directory (default: $HOME/.koala)
     #[arg(long, env = "KOALA_STATE_DIR", global = true)]
@@ -475,13 +479,22 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
         // Facts
         Command::FactWrite { name, text } => {
             let id = brain.db.write_fact(&name, &text).await?;
-            print_output(format, serde_json::json!({"id": id, "name": name, "status": "written"}));
+            print_output(
+                format,
+                serde_json::json!({"id": id, "name": name, "status": "written"}),
+            );
         }
         Command::FactRead { name } => {
             if let Some((id, text)) = brain.db.read_fact(&name).await? {
-                print_output(format, serde_json::json!({"id": id, "name": name, "text": text}));
+                print_output(
+                    format,
+                    serde_json::json!({"id": id, "name": name, "text": text}),
+                );
             } else {
-                print_output(format, serde_json::json!({"error": "Fact not found", "name": name}));
+                print_output(
+                    format,
+                    serde_json::json!({"error": "Fact not found", "name": name}),
+                );
             }
         }
         Command::FactList => {
@@ -494,16 +507,30 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
         }
         Command::FactDelete { name } => {
             let deleted = brain.db.delete_fact(&name).await?;
-            print_output(format, serde_json::json!({"deleted": deleted, "name": name}));
+            print_output(
+                format,
+                serde_json::json!({"deleted": deleted, "name": name}),
+            );
         }
         Command::FactDeletePrefix { prefix } => {
             let count = brain.db.delete_fact_prefix(&prefix).await?;
-            print_output(format, serde_json::json!({"deleted": count, "prefix": prefix}));
+            print_output(
+                format,
+                serde_json::json!({"deleted": count, "prefix": prefix}),
+            );
         }
 
         // Entities
-        Command::EntityCreate { name, type_, project, observations } => {
-            let id = brain.db.create_entity(&name, type_.as_deref(), project.as_deref(), &observations).await?;
+        Command::EntityCreate {
+            name,
+            type_,
+            project,
+            observations,
+        } => {
+            let id = brain
+                .db
+                .create_entity(&name, type_.as_deref(), project.as_deref(), &observations)
+                .await?;
             print_output(format, serde_json::json!({"id": id, "name": name}));
         }
         Command::EntityAddObs { name, observations } => {
@@ -520,29 +547,81 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
         }
         Command::RelationCreate { from, to, type_ } => {
             let id = brain.db.create_relation(&from, &to, &type_).await?;
-            print_output(format, serde_json::json!({"id": id, "from": from, "to": to, "type": type_}));
+            print_output(
+                format,
+                serde_json::json!({"id": id, "from": from, "to": to, "type": type_}),
+            );
         }
 
         // Tasks
-        Command::TaskCreate { title, body, status, project, priority } => {
-            let id = brain.db.create_task(&title, &body, &status, &project, &priority).await?;
+        Command::TaskCreate {
+            title,
+            body,
+            status,
+            project,
+            priority,
+        } => {
+            let id = brain
+                .db
+                .create_task(&title, &body, &status, &project, &priority)
+                .await?;
             print_output(format, serde_json::json!({"id": id, "title": title}));
         }
-        Command::TaskQuery { status, project, search, limit } => {
-            let tasks = brain.db.query_tasks(status.as_deref(), project.as_deref(), search.as_deref(), limit).await?;
+        Command::TaskQuery {
+            status,
+            project,
+            search,
+            limit,
+        } => {
+            let tasks = brain
+                .db
+                .query_tasks(
+                    status.as_deref(),
+                    project.as_deref(),
+                    search.as_deref(),
+                    limit,
+                )
+                .await?;
             print_output(format, serde_json::json!(tasks));
         }
-        Command::TaskUpdate { id, title, body, status, project, priority } => {
-            brain.db.update_task(id, title.as_deref(), body.as_deref(), status.as_deref(), project.as_deref(), priority.as_deref()).await?;
+        Command::TaskUpdate {
+            id,
+            title,
+            body,
+            status,
+            project,
+            priority,
+        } => {
+            brain
+                .db
+                .update_task(
+                    id,
+                    title.as_deref(),
+                    body.as_deref(),
+                    status.as_deref(),
+                    project.as_deref(),
+                    priority.as_deref(),
+                )
+                .await?;
             print_output(format, serde_json::json!({"updated": true, "id": id}));
         }
 
         // Model
-        Command::ModelInit { hidden, activation, lr } => {
+        Command::ModelInit {
+            hidden,
+            activation,
+            lr,
+        } => {
             brain.init_model(hidden, lr, &activation).await?;
             print_output(format, serde_json::json!({"initialized": true}));
         }
-        Command::ModelTrain { xs, ys, targets, lr, steps } => {
+        Command::ModelTrain {
+            xs,
+            ys,
+            targets,
+            lr,
+            steps,
+        } => {
             let loss = brain.train_model(&xs, &ys, &targets, lr, steps).await?;
             print_output(format, serde_json::json!({"loss": loss}));
         }
@@ -569,17 +648,28 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
             print_output(format, serde_json::json!({"embedding": embedding}));
         }
         Command::EmbedBatch { texts } => {
-            let embeddings = brain.embed_batch(&texts.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await?;
+            let embeddings = brain
+                .embed_batch(&texts.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                .await?;
             print_output(format, serde_json::json!({"embeddings": embeddings}));
         }
 
         // Vector search
         Command::VectorUpsertFact { fact_id, embedding } => {
             brain.vector_upsert_fact(fact_id, &embedding).await?;
-            print_output(format, serde_json::json!({"upserted": true, "fact_id": fact_id}));
+            print_output(
+                format,
+                serde_json::json!({"upserted": true, "fact_id": fact_id}),
+            );
         }
-        Command::VectorSearchFacts { query_embedding, k, keyword_filter } => {
-            let results = brain.vector_search_facts(&query_embedding, k, keyword_filter.as_deref()).await?;
+        Command::VectorSearchFacts {
+            query_embedding,
+            k,
+            keyword_filter,
+        } => {
+            let results = brain
+                .vector_search_facts(&query_embedding, k, keyword_filter.as_deref())
+                .await?;
             print_output(format, serde_json::json!(results));
         }
 
@@ -598,19 +688,30 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
 
         // Plugins
         Command::PluginSearch { query } => {
-            let results = brain.plugin_registry.search(&query.unwrap_or_default()).await?;
+            let results = brain
+                .plugin_registry
+                .search(&query.unwrap_or_default())
+                .await?;
             print_output(format, serde_json::json!(results));
         }
         Command::PluginInstall { name, version } => {
-            let path = brain.plugin_registry.install(&name, version.as_deref()).await?;
+            let path = brain
+                .plugin_registry
+                .install(&name, version.as_deref())
+                .await?;
             print_output(format, serde_json::json!({"installed": true, "path": path}));
         }
         Command::PluginUninstall { name } => {
             brain.plugin_registry.uninstall(&name).await?;
-            print_output(format, serde_json::json!({"uninstalled": true, "name": name}));
+            print_output(
+                format,
+                serde_json::json!({"uninstalled": true, "name": name}),
+            );
         }
         Command::PluginCall { plugin, tool, args } => {
-            let result = brain.call_plugin_tool(&plugin, &tool, serde_json::from_str(&args)?).await?;
+            let result = brain
+                .call_plugin_tool(&plugin, &tool, serde_json::from_str(&args)?)
+                .await?;
             print_output(format, result);
         }
         Command::PluginRegistryStats => {
@@ -623,9 +724,16 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
         }
 
         // Thoughts
-        Command::Think { step, thought, next_step } => {
+        Command::Think {
+            step,
+            thought,
+            next_step,
+        } => {
             let id = brain.db.add_thought(step, &thought).await?;
-            print_output(format, serde_json::json!({"id": id, "step": step, "next_step": next_step}));
+            print_output(
+                format,
+                serde_json::json!({"id": id, "step": step, "next_step": next_step}),
+            );
         }
         Command::ThoughtHistory { limit } => {
             let thoughts = brain.db.get_thoughts(limit).await?;
@@ -651,7 +759,10 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
             if let Some(exp) = brain.db.explain_rank(&name).await? {
                 print_output(format, serde_json::json!(exp));
             } else {
-                print_output(format, serde_json::json!({"error": "No rank data", "name": name}));
+                print_output(
+                    format,
+                    serde_json::json!({"error": "No rank data", "name": name}),
+                );
             }
         }
 

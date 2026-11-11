@@ -1,10 +1,10 @@
 //! Vector Search Module (v0.2)
-//! 
+//!
 //! Implements semantic search using sqlite-vec extension.
 //! Provides HNSW-based vector indexing for facts and entities.
 
 use anyhow::Result;
-use sqlx::{SqlitePool, Row};
+use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -125,7 +125,8 @@ impl VectorEngine {
             .await?;
 
             Ok::<(), anyhow::Error>(())
-        }.await;
+        }
+        .await;
 
         if let Err(e) = result {
             // Vec0 extension not available - vector search will be disabled
@@ -137,20 +138,21 @@ impl VectorEngine {
     /// Upsert a fact embedding
     pub async fn upsert_fact_embedding(&self, fact_id: i64, embedding: &[f32]) -> Result<()> {
         if embedding.len() != self.config.dimension {
-            anyhow::bail!("Embedding dimension mismatch: expected {}, got {}", 
-                self.config.dimension, embedding.len());
+            anyhow::bail!(
+                "Embedding dimension mismatch: expected {}, got {}",
+                self.config.dimension,
+                embedding.len()
+            );
         }
 
         // Convert to JSON array for sqlite-vec
         let embedding_json = serde_json::to_string(embedding)?;
 
-        sqlx::query(
-            "INSERT OR REPLACE INTO fact_embeddings(rowid, embedding) VALUES (?, ?)"
-        )
-        .bind(fact_id)
-        .bind(embedding_json)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("INSERT OR REPLACE INTO fact_embeddings(rowid, embedding) VALUES (?, ?)")
+            .bind(fact_id)
+            .bind(embedding_json)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -163,13 +165,11 @@ impl VectorEngine {
 
         let embedding_json = serde_json::to_string(embedding)?;
 
-        sqlx::query(
-            "INSERT OR REPLACE INTO entity_embeddings(rowid, embedding) VALUES (?, ?)"
-        )
-        .bind(entity_id)
-        .bind(embedding_json)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("INSERT OR REPLACE INTO entity_embeddings(rowid, embedding) VALUES (?, ?)")
+            .bind(entity_id)
+            .bind(embedding_json)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

@@ -1,5 +1,5 @@
 //! Plugin System Module (v0.5)
-//! 
+//!
 //! Implements dynamic tool registration via WASM plugins and native dynamic libraries.
 //! Supports hot-reloading, sandboxed execution, and custom tool definitions.
 
@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::info;
-use wasmtime::{Config, Engine, Linker, Module, Store, Caller};
+use wasmtime::{Caller, Config, Engine, Linker, Module, Store};
 
 /// Plugin metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,8 +58,14 @@ pub struct Plugin {
 /// Plugin type
 #[derive(Debug, Clone)]
 pub enum PluginType {
-    Wasm { module: Module, instance_id: u64 },
-    Native { library: Arc<Library>, init_fn: *mut PluginVTable },
+    Wasm {
+        module: Module,
+        instance_id: u64,
+    },
+    Native {
+        library: Arc<Library>,
+        init_fn: *mut PluginVTable,
+    },
 }
 
 /// Plugin state
@@ -76,8 +82,15 @@ pub struct PluginState {
 pub struct PluginVTable {
     pub name: *const std::os::raw::c_char,
     pub version: *const std::os::raw::c_char,
-    pub get_tools: unsafe extern "C" fn(*mut std::ffi::c_void, *mut ToolDefinition, *mut u32) -> i32,
-    pub call_tool: unsafe extern "C" fn(*mut std::ffi::c_void, *const std::os::raw::c_char, *const std::os::raw::c_char, *mut std::os::raw::c_char, *mut u32) -> i32,
+    pub get_tools:
+        unsafe extern "C" fn(*mut std::ffi::c_void, *mut ToolDefinition, *mut u32) -> i32,
+    pub call_tool: unsafe extern "C" fn(
+        *mut std::ffi::c_void,
+        *const std::os::raw::c_char,
+        *const std::os::raw::c_char,
+        *mut std::os::raw::c_char,
+        *mut u32,
+    ) -> i32,
     pub user_data: *mut std::ffi::c_void,
     pub drop: unsafe extern "C" fn(*mut std::ffi::c_void),
 }
@@ -90,7 +103,8 @@ pub struct WasmHost {
     pub vector_search: Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>,
     pub fact_write: Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>,
     pub fact_read: Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>,
-    pub entity_create: Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>,
+    pub entity_create:
+        Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>,
     pub task_create: Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>,
 }
 
@@ -113,37 +127,58 @@ impl WasmHost {
         self
     }
 
-    pub fn with_db_write(mut self, f: Arc<dyn Fn(&str, &Value) -> Result<()> + Send + Sync>) -> Self {
+    pub fn with_db_write(
+        mut self,
+        f: Arc<dyn Fn(&str, &Value) -> Result<()> + Send + Sync>,
+    ) -> Self {
         self.db_write = f;
         self
     }
 
-    pub fn with_model_predict(mut self, f: Arc<dyn Fn(&[f32], &[f32]) -> Result<Vec<f32>> + Send + Sync>) -> Self {
+    pub fn with_model_predict(
+        mut self,
+        f: Arc<dyn Fn(&[f32], &[f32]) -> Result<Vec<f32>> + Send + Sync>,
+    ) -> Self {
         self.model_predict = f;
         self
     }
 
-    pub fn with_vector_search(mut self, f: Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>) -> Self {
+    pub fn with_vector_search(
+        mut self,
+        f: Arc<dyn Fn(&[f32], usize) -> Result<Vec<Value>> + Send + Sync>,
+    ) -> Self {
         self.vector_search = f;
         self
     }
 
-    pub fn with_fact_write(mut self, f: Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>) -> Self {
+    pub fn with_fact_write(
+        mut self,
+        f: Arc<dyn Fn(&str, &str) -> Result<i64> + Send + Sync>,
+    ) -> Self {
         self.fact_write = f;
         self
     }
 
-    pub fn with_fact_read(mut self, f: Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>) -> Self {
+    pub fn with_fact_read(
+        mut self,
+        f: Arc<dyn Fn(&str) -> Result<Option<Value>> + Send + Sync>,
+    ) -> Self {
         self.fact_read = f;
         self
     }
 
-    pub fn with_entity_create(mut self, f: Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>) -> Self {
+    pub fn with_entity_create(
+        mut self,
+        f: Arc<dyn Fn(&str, Option<&str>, Option<&str>, &[String]) -> Result<i64> + Send + Sync>,
+    ) -> Self {
         self.entity_create = f;
         self
     }
 
-    pub fn with_task_create(mut self, f: Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>) -> Self {
+    pub fn with_task_create(
+        mut self,
+        f: Arc<dyn Fn(&str, &str, &str, &str, &str) -> Result<i64> + Send + Sync>,
+    ) -> Self {
         self.task_create = f;
         self
     }
@@ -186,15 +221,24 @@ impl PluginManager {
         info!("Loading native plugin: {:?}", lib_path);
 
         let library = unsafe { Library::new(&lib_path)? };
-        
+
         // Get init function
-        let init_fn: Symbol<unsafe fn() -> *mut PluginVTable> = unsafe { library.get(b"plugin_init")? };
+        let init_fn: Symbol<unsafe fn() -> *mut PluginVTable> =
+            unsafe { library.get(b"plugin_init")? };
         let vtable_ptr = unsafe { init_fn() };
         let vtable = unsafe { &*vtable_ptr };
 
         // Get manifest
-        let name = unsafe { std::ffi::CStr::from_ptr(vtable.name).to_string_lossy().to_string() };
-        let version = unsafe { std::ffi::CStr::from_ptr(vtable.version).to_string_lossy().to_string() };
+        let name = unsafe {
+            std::ffi::CStr::from_ptr(vtable.name)
+                .to_string_lossy()
+                .to_string()
+        };
+        let version = unsafe {
+            std::ffi::CStr::from_ptr(vtable.version)
+                .to_string_lossy()
+                .to_string()
+        };
 
         // Get tool definitions
         let mut tool_count = 0u32;
@@ -233,9 +277,9 @@ impl PluginManager {
 
         let plugin = Plugin {
             manifest,
-            plugin_type: PluginType::Native { 
-                library: Arc::new(library), 
-                init_fn: vtable_ptr as *mut _ 
+            plugin_type: PluginType::Native {
+                library: Arc::new(library),
+                init_fn: vtable_ptr as *mut _,
             },
             state: PluginState {
                 enabled: true,
@@ -251,149 +295,260 @@ impl PluginManager {
     }
 
     /// Load a WASM plugin (.wasm) with optional manifest/tools JSON override
-            pub async fn load_wasm_plugin(&self, module_name: &str, manifest_json: Option<serde_json::Value>, tools_json: Option<serde_json::Value>) -> Result<()> {
-                let module_path = self.wasm_module_dir.join(module_name);
-                info!("Loading WASM plugin: {:?}", module_path);
-                eprintln!("DEBUG: Loading WASM plugin: {:?}", module_path);
+    pub async fn load_wasm_plugin(
+        &self,
+        module_name: &str,
+        manifest_json: Option<serde_json::Value>,
+        tools_json: Option<serde_json::Value>,
+    ) -> Result<()> {
+        let module_path = self.wasm_module_dir.join(module_name);
+        info!("Loading WASM plugin: {:?}", module_path);
+        eprintln!("DEBUG: Loading WASM plugin: {:?}", module_path);
 
-                let module = Module::from_file(&self.wasm_engine, &module_path)?;
-                let mut store = Store::new(&self.wasm_engine, ());
+        let module = Module::from_file(&self.wasm_engine, &module_path)?;
+        let mut store = Store::new(&self.wasm_engine, ());
 
-                // Create linker with host functions
-                let mut linker = Linker::new(&self.wasm_engine);
-                self.add_host_functions(&mut linker)?;
+        // Create linker with host functions
+        let mut linker = Linker::new(&self.wasm_engine);
+        self.add_host_functions(&mut linker)?;
 
-                // Instantiate asynchronously (required when async_support is enabled)
-                let instance = linker.instantiate_async(&mut store, &module).await?;
+        // Instantiate asynchronously (required when async_support is enabled)
+        let instance = linker.instantiate_async(&mut store, &module).await?;
 
-                // Get allocate function to allocate memory in WASM for JSON data
-                let allocate = instance.get_typed_func::<(i32,), (i32,)>(&mut store, "allocate")?;
-                eprintln!("DEBUG: Got allocate function");
+        // Get allocate function to allocate memory in WASM for JSON data
+        let allocate = instance.get_typed_func::<(i32,), (i32,)>(&mut store, "allocate")?;
+        eprintln!("DEBUG: Got allocate function");
 
-                // Get set_manifest and set_tools functions (exported by WASM)
-                let set_manifest = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_manifest")?;
-                let set_tools = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_tools")?;
-                eprintln!("DEBUG: Got set_manifest and set_tools functions");
+        // Get set_manifest and set_tools functions (exported by WASM)
+        let set_manifest = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_manifest")?;
+        let set_tools = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_tools")?;
+        eprintln!("DEBUG: Got set_manifest and set_tools functions");
 
-                // Write manifest JSON: allocate in WASM memory, copy data, register pointer
-                let manifest_json = manifest_json.unwrap_or_else(|| serde_json::json!({}));
-                let manifest_bytes = serde_json::to_vec(&manifest_json)?;
-                eprintln!("DEBUG: Manifest JSON bytes: {} bytes, content: {}", manifest_bytes.len(), String::from_utf8_lossy(&manifest_bytes));
-                let manifest_ptr = allocate.call_async(&mut store, (manifest_bytes.len() as i32,)).await?.0;
-                eprintln!("DEBUG: Allocated manifest_ptr: {}", manifest_ptr);
-                let memory = instance.get_memory(&mut store, "memory").unwrap();
-                memory.data_mut(&mut store)[manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()].copy_from_slice(&manifest_bytes);
-                // Verify write
-                let verify = &memory.data(&store)[manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()];
-                eprintln!("DEBUG: Verify write at manifest_ptr: {} bytes, content: {}", verify.len(), String::from_utf8_lossy(verify));
-                set_manifest.call_async(&mut store, (manifest_ptr, manifest_bytes.len() as i32)).await?;
-                eprintln!("DEBUG: Called set_manifest");
+        // Write manifest JSON: allocate in WASM memory, copy data, register pointer
+        let manifest_json = manifest_json.unwrap_or_else(|| serde_json::json!({}));
+        let manifest_bytes = serde_json::to_vec(&manifest_json)?;
+        eprintln!(
+            "DEBUG: Manifest JSON bytes: {} bytes, content: {}",
+            manifest_bytes.len(),
+            String::from_utf8_lossy(&manifest_bytes)
+        );
+        let manifest_ptr = allocate
+            .call_async(&mut store, (manifest_bytes.len() as i32,))
+            .await?
+            .0;
+        eprintln!("DEBUG: Allocated manifest_ptr: {}", manifest_ptr);
+        let memory = instance.get_memory(&mut store, "memory").unwrap();
+        memory.data_mut(&mut store)
+            [manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()]
+            .copy_from_slice(&manifest_bytes);
+        // Verify write
+        let verify = &memory.data(&store)
+            [manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()];
+        eprintln!(
+            "DEBUG: Verify write at manifest_ptr: {} bytes, content: {}",
+            verify.len(),
+            String::from_utf8_lossy(verify)
+        );
+        set_manifest
+            .call_async(&mut store, (manifest_ptr, manifest_bytes.len() as i32))
+            .await?;
+        eprintln!("DEBUG: Called set_manifest");
 
-                // Write tools JSON: allocate in WASM memory, copy data, register pointer
-                let tools_json = tools_json.unwrap_or_else(|| serde_json::json!([]));
-                let tools_bytes = serde_json::to_vec(&tools_json)?;
-                eprintln!("DEBUG: Tools JSON bytes: {} bytes, content: {}", tools_bytes.len(), String::from_utf8_lossy(&tools_bytes));
-                let tools_ptr = allocate.call_async(&mut store, (tools_bytes.len() as i32,)).await?.0;
-                eprintln!("DEBUG: Allocated tools_ptr: {}", tools_ptr);
-                memory.data_mut(&mut store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()].copy_from_slice(&tools_bytes);
-                // Verify write
-                let verify = &memory.data(&store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()];
-                eprintln!("DEBUG: Verify write at tools_ptr: {} bytes, content: {}", verify.len(), String::from_utf8_lossy(verify));
-                set_tools.call_async(&mut store, (tools_ptr, tools_bytes.len() as i32)).await?;
-                eprintln!("DEBUG: Called set_tools");
+        // Write tools JSON: allocate in WASM memory, copy data, register pointer
+        let tools_json = tools_json.unwrap_or_else(|| serde_json::json!([]));
+        let tools_bytes = serde_json::to_vec(&tools_json)?;
+        eprintln!(
+            "DEBUG: Tools JSON bytes: {} bytes, content: {}",
+            tools_bytes.len(),
+            String::from_utf8_lossy(&tools_bytes)
+        );
+        let tools_ptr = allocate
+            .call_async(&mut store, (tools_bytes.len() as i32,))
+            .await?
+            .0;
+        eprintln!("DEBUG: Allocated tools_ptr: {}", tools_ptr);
+        memory.data_mut(&mut store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()]
+            .copy_from_slice(&tools_bytes);
+        // Verify write
+        let verify =
+            &memory.data(&store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()];
+        eprintln!(
+            "DEBUG: Verify write at tools_ptr: {} bytes, content: {}",
+            verify.len(),
+            String::from_utf8_lossy(verify)
+        );
+        set_tools
+            .call_async(&mut store, (tools_ptr, tools_bytes.len() as i32))
+            .await?;
+        eprintln!("DEBUG: Called set_tools");
 
-                // Get exports (now using the set JSON data)
-                let get_tools = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_tools")?;
-                let (tools_ptr_out, tools_len) = get_tools.call_async(&mut store, ()).await?;
-                eprintln!("DEBUG: get_tools returned: ptr={}, len={}", tools_ptr_out, tools_len);
+        // Get exports (now using the set JSON data)
+        let get_tools = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_tools")?;
+        let (tools_ptr_out, tools_len) = get_tools.call_async(&mut store, ()).await?;
+        eprintln!(
+            "DEBUG: get_tools returned: ptr={}, len={}",
+            tools_ptr_out, tools_len
+        );
 
-                // Read tools from WASM memory
-                let tools_data = &memory.data(&store)[tools_ptr_out as usize..tools_ptr_out as usize + tools_len as usize];
-                eprintln!("DEBUG: Tools data read: {} bytes, content: {}", tools_data.len(), String::from_utf8_lossy(tools_data));
-                let _tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
+        // Read tools from WASM memory
+        let tools_data = &memory.data(&store)
+            [tools_ptr_out as usize..tools_ptr_out as usize + tools_len as usize];
+        eprintln!(
+            "DEBUG: Tools data read: {} bytes, content: {}",
+            tools_data.len(),
+            String::from_utf8_lossy(tools_data)
+        );
+        let _tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
 
-                // Get manifest
-                let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
-                let (manifest_ptr_out, manifest_len) = get_manifest.call_async(&mut store, ()).await?;
-                eprintln!("DEBUG: get_manifest returned: ptr={}, len={}", manifest_ptr_out, manifest_len);
-                let manifest_data = &memory.data(&store)[manifest_ptr_out as usize..manifest_ptr_out as usize + manifest_len as usize];
-                eprintln!("DEBUG: Manifest data read: {} bytes, content: {}", manifest_data.len(), String::from_utf8_lossy(manifest_data));
-                let manifest: PluginManifest = serde_json::from_slice(manifest_data)?;
+        // Get manifest
+        let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
+        let (manifest_ptr_out, manifest_len) = get_manifest.call_async(&mut store, ()).await?;
+        eprintln!(
+            "DEBUG: get_manifest returned: ptr={}, len={}",
+            manifest_ptr_out, manifest_len
+        );
+        let manifest_data = &memory.data(&store)
+            [manifest_ptr_out as usize..manifest_ptr_out as usize + manifest_len as usize];
+        eprintln!(
+            "DEBUG: Manifest data read: {} bytes, content: {}",
+            manifest_data.len(),
+            String::from_utf8_lossy(manifest_data)
+        );
+        let manifest: PluginManifest = serde_json::from_slice(manifest_data)?;
 
-                let instance_id = {
-                    let mut id = self.next_instance_id.lock().await;
-                    *id += 1;
-                    *id
-                };
+        let instance_id = {
+            let mut id = self.next_instance_id.lock().await;
+            *id += 1;
+            *id
+        };
 
-                let plugin = Plugin {
-                    manifest,
-                    plugin_type: PluginType::Wasm { module, instance_id },
-                    state: PluginState {
-                        enabled: true,
-                        loaded_at: chrono::Utc::now(),
-                        call_count: 0,
-                        last_error: None,
-                    },
-                };
+        let plugin = Plugin {
+            manifest,
+            plugin_type: PluginType::Wasm {
+                module,
+                instance_id,
+            },
+            state: PluginState {
+                enabled: true,
+                loaded_at: chrono::Utc::now(),
+                call_count: 0,
+                last_error: None,
+            },
+        };
 
-                self.plugins.insert(plugin.manifest.name.clone(), plugin);
-                info!("Loaded WASM plugin: {}", module_name);
-                Ok(())
-            }
+        self.plugins.insert(plugin.manifest.name.clone(), plugin);
+        info!("Loaded WASM plugin: {}", module_name);
+        Ok(())
+    }
 
     fn add_host_functions(&self, linker: &mut Linker<()>) -> Result<()> {
         let host = self.wasm_host.clone();
 
         // db_read
-        linker.func_wrap("host", "db_read", move |_caller: Caller<'_, ()>, _ptr: i32, _len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
-            // Implementation would read from caller memory
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "db_read",
+            move |_caller: Caller<'_, ()>,
+                  _ptr: i32,
+                  _len: i32,
+                  _out_ptr: i32,
+                  _out_len: i32|
+                  -> i32 {
+                // Implementation would read from caller memory
+                0
+            },
+        )?;
 
         // fact_write
         let _host_fw = host.fact_write.clone();
-        linker.func_wrap("host", "fact_write", move |_name_ptr: i32, _name_len: i32, _text_ptr: i32, _text_len: i32| -> i64 {
-            // Would need to read from WASM memory
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "fact_write",
+            move |_name_ptr: i32, _name_len: i32, _text_ptr: i32, _text_len: i32| -> i64 {
+                // Would need to read from WASM memory
+                0
+            },
+        )?;
 
         // fact_read
         let _host_fr = host.fact_read.clone();
-        linker.func_wrap("host", "fact_read", move |_name_ptr: i32, _name_len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "fact_read",
+            move |_name_ptr: i32, _name_len: i32, _out_ptr: i32, _out_len: i32| -> i32 { 0 },
+        )?;
 
         // entity_create
         let _host_ec = host.entity_create.clone();
-        linker.func_wrap("host", "entity_create", move |_name_ptr: i32, _name_len: i32, _type_ptr: i32, _type_len: i32, _project_ptr: i32, _project_len: i32, _obs_ptr: i32, _obs_len: i32| -> i64 {
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "entity_create",
+            move |_name_ptr: i32,
+                  _name_len: i32,
+                  _type_ptr: i32,
+                  _type_len: i32,
+                  _project_ptr: i32,
+                  _project_len: i32,
+                  _obs_ptr: i32,
+                  _obs_len: i32|
+                  -> i64 { 0 },
+        )?;
 
         // task_create
         let _host_tc = host.task_create.clone();
-        linker.func_wrap("host", "task_create", move |_title_ptr: i32, _title_len: i32, _body_ptr: i32, _body_len: i32, _status_ptr: i32, _status_len: i32, _project_ptr: i32, _project_len: i32, _priority_ptr: i32, _priority_len: i32| -> i64 {
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "task_create",
+            move |_title_ptr: i32,
+                  _title_len: i32,
+                  _body_ptr: i32,
+                  _body_len: i32,
+                  _status_ptr: i32,
+                  _status_len: i32,
+                  _project_ptr: i32,
+                  _project_len: i32,
+                  _priority_ptr: i32,
+                  _priority_len: i32|
+                  -> i64 { 0 },
+        )?;
 
         // model_predict
         let _host_mp = host.model_predict.clone();
-        linker.func_wrap("host", "model_predict", move |_xs_ptr: i32, _xs_len: i32, _ys_ptr: i32, _ys_len: i32, _out_ptr: i32, _out_len: i32| -> i32 {
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "model_predict",
+            move |_xs_ptr: i32,
+                  _xs_len: i32,
+                  _ys_ptr: i32,
+                  _ys_len: i32,
+                  _out_ptr: i32,
+                  _out_len: i32|
+                  -> i32 { 0 },
+        )?;
 
         // vector_search
         let _host_vs = host.vector_search.clone();
-        linker.func_wrap("host", "vector_search", move |_query_ptr: i32, _query_len: i32, _k: i32, _out_ptr: i32, _out_len: i32| -> i32 {
-            0
-        })?;
+        linker.func_wrap(
+            "host",
+            "vector_search",
+            move |_query_ptr: i32, _query_len: i32, _k: i32, _out_ptr: i32, _out_len: i32| -> i32 {
+                0
+            },
+        )?;
 
         Ok(())
     }
 
     /// Call a plugin tool
-    pub async fn call_tool(&self, plugin_name: &str, tool_name: &str, args: Value) -> Result<Value> {
-        let mut plugin = self.plugins.get_mut(plugin_name)
+    pub async fn call_tool(
+        &self,
+        plugin_name: &str,
+        tool_name: &str,
+        args: Value,
+    ) -> Result<Value> {
+        let mut plugin = self
+            .plugins
+            .get_mut(plugin_name)
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", plugin_name))?;
 
         if !plugin.state.enabled {
@@ -401,7 +556,10 @@ impl PluginManager {
         }
 
         // Find tool definition
-        let _tool_def = plugin.manifest.tools.iter()
+        let _tool_def = plugin
+            .manifest
+            .tools
+            .iter()
             .find(|t| t.name == tool_name)
             .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
 
@@ -412,8 +570,12 @@ impl PluginManager {
             PluginType::Native { library: _, .. } => {
                 self.call_native_tool(&plugin, tool_name, args).await?
             }
-            PluginType::Wasm { module: _, instance_id } => {
-                self.call_wasm_tool(&plugin, tool_name, args, *instance_id).await?
+            PluginType::Wasm {
+                module: _,
+                instance_id,
+            } => {
+                self.call_wasm_tool(&plugin, tool_name, args, *instance_id)
+                    .await?
             }
         };
 
@@ -421,13 +583,24 @@ impl PluginManager {
         Ok(result)
     }
 
-    async fn call_native_tool(&self, _plugin: &Plugin, _tool_name: &str, _args: Value) -> Result<Value> {
+    async fn call_native_tool(
+        &self,
+        _plugin: &Plugin,
+        _tool_name: &str,
+        _args: Value,
+    ) -> Result<Value> {
         // Native plugin calling would use the vtable
         // Simplified for now
         Ok(Value::Null)
     }
 
-    async fn call_wasm_tool(&self, _plugin: &Plugin, _tool_name: &str, _args: Value, _instance_id: u64) -> Result<Value> {
+    async fn call_wasm_tool(
+        &self,
+        _plugin: &Plugin,
+        _tool_name: &str,
+        _args: Value,
+        _instance_id: u64,
+    ) -> Result<Value> {
         // WASM tool calling
         // Simplified for now
         Ok(Value::Null)
@@ -435,14 +608,14 @@ impl PluginManager {
 
     /// List all loaded plugins
     pub fn list_plugins(&self) -> Vec<PluginManifest> {
-        self.plugins.iter()
-            .map(|p| p.manifest.clone())
-            .collect()
+        self.plugins.iter().map(|p| p.manifest.clone()).collect()
     }
 
     /// Enable/disable plugin
     pub fn set_plugin_enabled(&self, name: &str, enabled: bool) -> Result<()> {
-        let mut plugin = self.plugins.get_mut(name)
+        let mut plugin = self
+            .plugins
+            .get_mut(name)
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", name))?;
         plugin.state.enabled = enabled;
         Ok(())
@@ -463,7 +636,10 @@ impl PluginManager {
             for entry in std::fs::read_dir(&self.native_lib_dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.extension().map_or(false, |e| e == "so" || e == "dll" || e == "dylib") {
+                if path
+                    .extension()
+                    .map_or(false, |e| e == "so" || e == "dll" || e == "dylib")
+                {
                     if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                         if self.load_native_plugin(name).await.is_ok() {
                             loaded.push(name.to_string());
@@ -492,12 +668,21 @@ impl PluginManager {
     }
 
     /// Load a builtin plugin with JSON from registry
-    pub async fn load_builtin_plugin(&self, name: &str, registry: &crate::plugin_marketplace::PluginRegistry) -> Result<()> {
+    pub async fn load_builtin_plugin(
+        &self,
+        name: &str,
+        registry: &crate::plugin_marketplace::PluginRegistry,
+    ) -> Result<()> {
         let manifest_json = Some(registry.get_builtin_manifest(name));
         let tools_json = Some(registry.get_builtin_tools(name));
         // Pass name with .wasm extension for file loading
-        let filename = if name.ends_with(".wasm") { name.to_string() } else { format!("{}.wasm", name) };
-        self.load_wasm_plugin(&filename, manifest_json, tools_json).await
+        let filename = if name.ends_with(".wasm") {
+            name.to_string()
+        } else {
+            format!("{}.wasm", name)
+        };
+        self.load_wasm_plugin(&filename, manifest_json, tools_json)
+            .await
     }
 }
 
@@ -507,13 +692,13 @@ pub mod wasm_plugin_interface {
     use serde_json::Value;
 
     /// Plugin must export these functions:
-    /// 
+    ///
     /// - get_manifest() -> (ptr, len) returning JSON PluginManifest
     /// - get_tools() -> (ptr, len) returning JSON Vec<ToolDefinition>
     /// - call_tool(name_ptr, name_len, args_ptr, args_len, out_ptr, out_len) -> i32
     /// - allocate(size) -> ptr
     /// - deallocate(ptr, size)
-    /// 
+    ///
     /// Memory is shared with host via wasmtime Memory export.
 
     #[derive(Serialize, Deserialize)]
@@ -537,12 +722,8 @@ mod tests {
     #[tokio::test]
     async fn test_plugin_manager_creation() {
         let host = WasmHost::new();
-        let manager = PluginManager::new(
-            host,
-            "/tmp/plugins/native",
-            "/tmp/plugins/wasm",
-        ).unwrap();
-        
+        let manager = PluginManager::new(host, "/tmp/plugins/native", "/tmp/plugins/wasm").unwrap();
+
         assert!(manager.list_plugins().is_empty());
     }
 }
