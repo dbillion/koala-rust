@@ -51,6 +51,7 @@ impl PluginIndex {
 pub struct PluginRegistry {
     index: Arc<RwLock<PluginIndex>>,
     index_path: PathBuf,
+    #[allow(dead_code)]
     install_dir: PathBuf,
     wasm_module_dir: PathBuf,
     native_module_dir: PathBuf,
