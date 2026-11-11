@@ -2,10 +2,9 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::io::stdin;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use crate::{PeaBrain, db, model, vector, sync, embeddings, plugins};
+use crate::{PeaBrain, sync};
 
 pub struct PeaBrainServer {
     brain: Arc<Mutex<PeaBrain>>,
@@ -72,7 +71,7 @@ impl PeaBrainServer {
             json!(t)
         }
 
-        let mut props = Map::new();
+        let _props = Map::new();
         let tools = vec![
             // Core tools
             tool("health", "Database diagnostics", Map::new(), None),
@@ -433,7 +432,7 @@ impl PeaBrainServer {
 
     // Core handlers
     async fn handle_write_fact(&self, args: Value) -> Result<Value> {
-        let mut brain = self.brain.lock().await;
+        let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
         let text = args["text"].as_str().unwrap();
         let rowid = brain.db.write_fact(name, text).await?;
@@ -566,7 +565,7 @@ impl PeaBrainServer {
     }
 
     async fn handle_model_train(&self, args: Value) -> Result<Value> {
-        let mut brain = self.brain.lock().await;
+        let brain = self.brain.lock().await;
         let model = brain.model.lock().await;
         let mut model_guard = model;
         let model_ref = model_guard.as_mut().ok_or_else(|| anyhow::anyhow!("no model loaded (model_init or model_load first)"))?;

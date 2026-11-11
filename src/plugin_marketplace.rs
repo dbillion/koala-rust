@@ -1,7 +1,6 @@
 //! Plugin marketplace for discovering, installing, and managing WASM/native plugins.
 
-use crate::plugins::{PluginManager, PluginType, PluginManifest, ToolDefinition};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use reqwest::Client;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -152,7 +151,7 @@ impl PluginRegistry {
     }
 
     /// Install a plugin from the registry
-    pub async fn install(&self, name: &str, version: Option<&str>) -> Result<PathBuf> {
+    pub async fn install(&self, name: &str, _version: Option<&str>) -> Result<PathBuf> {
         let plugin = {
             let index = self.index.read().await;
             index.plugins.get(name).cloned()

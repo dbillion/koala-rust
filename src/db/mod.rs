@@ -1,8 +1,6 @@
 use anyhow::Result;
-use sqlx::{sqlite::SqlitePoolOptions, sqlite::SqliteConnection, SqlitePool, Row, Connection, sqlite::SqliteConnectOptions};
+use sqlx::{SqlitePool, Row, Connection, sqlite::SqliteConnectOptions};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
-use serde_json::Value;
 use std::path::Path;
 use std::str::FromStr;
 

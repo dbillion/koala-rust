@@ -186,7 +186,7 @@ impl VectorEngine {
         }
 
         let query_json = serde_json::to_string(query_embedding)?;
-        let ef_search = self.config.hnsw_ef_search;
+        let _ef_search = self.config.hnsw_ef_search;
 
         let sql = if let Some(filter) = filter {
             format!(
@@ -286,7 +286,7 @@ impl VectorEngine {
         &self,
         query_embedding: &[f32],
         k: usize,
-        graph_depth: usize,
+        _graph_depth: usize,
     ) -> Result<Vec<VectorSearchResult>> {
         // First: vector search
         let vector_results = self.search_facts(query_embedding, k * 2, None).await?;

@@ -321,7 +321,7 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_cli_command(mut brain: PeaBrain, cmd: Command) -> Result<()> {
-    use peabrain_rust::db::Database;
+    
 use sqlx::Row;
     
     match cmd {
@@ -422,7 +422,7 @@ use sqlx::Row;
             println!("Model saved at step {}", step);
         }
         Command::ModelLoad { step } => {
-            if let Some(state) = brain.load_model(step).await? {
+            if let Some(_state) = brain.load_model(step).await? {
                 println!("Model loaded at step {}", step);
             } else {
                 println!("No model at step {}", step);
@@ -436,7 +436,7 @@ use sqlx::Row;
         }
         Command::ThoughtHistory { limit } => {
             let thoughts = brain.db.get_thoughts(limit).await?;
-            for (id, step, thought, created) in thoughts {
+            for (id, step, thought, _created) in thoughts {
                 println!("{} [{}] {}", id, step, thought);
             }
         }
