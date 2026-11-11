@@ -199,13 +199,12 @@ impl VectorEngine {
                  LIMIT ?"
             )
         } else {
-            format!(
-                "SELECT rowid as id, distance as score, '{{}}' as metadata 
+            "SELECT rowid as id, distance as score, '{}' as metadata 
                  FROM fact_embeddings 
                  WHERE embedding MATCH ? 
                  ORDER BY distance ASC 
                  LIMIT ?"
-            )
+                .to_string()
         };
 
         let rows = sqlx::query(&sql)
@@ -238,13 +237,12 @@ impl VectorEngine {
 
         let query_json = serde_json::to_string(query_embedding)?;
 
-        let sql = format!(
-            "SELECT rowid as id, distance as score, '{{}}' as metadata 
+        let sql = "SELECT rowid as id, distance as score, '{}' as metadata 
              FROM entity_embeddings 
              WHERE embedding MATCH ? 
              ORDER BY distance ASC 
              LIMIT ?"
-        );
+            .to_string();
 
         let rows = sqlx::query(&sql)
             .bind(query_json)
