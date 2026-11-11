@@ -19,6 +19,7 @@ tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 thiserror = "1.0"
 clap = { version = "4.0", features = ["derive", "env"] }
+clap-mcp = "0.1"
 dirs = "5.0"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
 ndarray = "0.16"
@@ -72,9 +73,9 @@ panic = "abort"
 debug = true
 
 # Optimize for size when needed
-[profile.release.size]
-opt-level = "z"
-lto = "thin"
+# [profile.release.size]  # Disabled - not a valid cargo profile
+# opt-level = "z"
+# lto = "thin"
 
 # Binary
 [[bin]]
