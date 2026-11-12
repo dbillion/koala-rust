@@ -9,7 +9,7 @@
 //! # Install
 //! cargo install peabrain-rust
 //!
-//! # Run as MCP server (full 50 tools)
+//! # Run as MCP server (full 53 tools)
 //! peabrain-rust --serve
 //!
 //! # CLI usage
@@ -29,7 +29,7 @@
 //!
 //! # MCP Integration
 //!
-//! PeaBrain runs as an MCP (Model Context Protocol) server, exposing 50 tools
+//! PeaBrain runs as an MCP (Model Context Protocol) server, exposing 53 tools
 //! to MCP clients like Claude Code, Cursor, and other agents.
 //!
 //! ```json
@@ -75,7 +75,7 @@ struct Args {
     #[arg(short, long, global = true, default_value = "text")]
     format: OutputFormat,
 
-    /// Run as MCP server over stdio (full 50 tools)
+    /// Run as MCP server over stdio (full 53 tools)
     #[arg(long)]
     serve: bool,
 
@@ -450,7 +450,7 @@ async fn main() -> Result<()> {
 
     let mut brain = PeaBrain::new(state_dir.clone()).await?;
 
-    // MCP server mode (full 50 tools)
+    // MCP server mode (full 53 tools)
     if cli.serve {
         run_stdio(brain).await?;
         return Ok(());

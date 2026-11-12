@@ -494,7 +494,7 @@ impl PeaBrainServer {
                 "Get pending sync changes",
                 {
                     let mut p = Map::new();
-                    p.insert("doc_type".to_string(), json!({"type": "string"}));
+                    p.insert("doc_type".to_string(), json!({"type": "string", "enum": ["facts", "entities", "relations", "tasks", "thoughts", "model"]}));
                     p
                 },
                 Some(vec!["doc_type"]),
@@ -504,7 +504,7 @@ impl PeaBrainServer {
                 "Merge changes from peer",
                 {
                     let mut p = Map::new();
-                    p.insert("doc_type".to_string(), json!({"type": "string"}));
+                    p.insert("doc_type".to_string(), json!({"type": "string", "enum": ["facts", "entities", "relations", "tasks", "thoughts", "model"]}));
                     p.insert(
                         "changes".to_string(),
                         json!({"type": "array", "items": {"type": "string"}}),
@@ -512,6 +512,39 @@ impl PeaBrainServer {
                     p
                 },
                 Some(vec!["doc_type", "changes"]),
+            ),
+            // One-call semantic memory
+            tool(
+                "remember_semantic",
+                "Write a fact and embed it for semantic search in one call",
+                {
+                    let mut p = Map::new();
+                    p.insert("name".to_string(), json!({"type": "string"}));
+                    p.insert("text".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["name", "text"]),
+            ),
+            tool(
+                "recall",
+                "Semantic + keyword search over facts. Returns name, text and score (lower is better)",
+                {
+                    let mut p = Map::new();
+                    p.insert("query".to_string(), json!({"type": "string"}));
+                    p.insert("k".to_string(), json!({"type": "integer", "default": 5}));
+                    p.insert(
+                        "keyword_weight".to_string(),
+                        json!({"type": "number", "default": 0.15}),
+                    );
+                    p
+                },
+                Some(vec!["query"]),
+            ),
+            tool(
+                "reindex_facts",
+                "Re-embed all current facts (after changing embedding model)",
+                Map::new(),
+                None,
             ),
             // v0.4: Embedding tools
             tool(
@@ -670,6 +703,9 @@ impl PeaBrainServer {
             "sync_merge_changes" => self.handle_sync_merge_changes(args).await,
 
             // v0.4: Embeddings
+            "remember_semantic" => self.handle_remember_semantic(args).await,
+            "recall" => self.handle_recall(args).await,
+            "reindex_facts" => self.handle_reindex_facts().await,
             "embed_text" => self.handle_embed_text(args).await,
             "embed_batch" => self.handle_embed_batch(args).await,
 
@@ -1190,6 +1226,38 @@ impl PeaBrainServer {
             .collect();
         brain.sync_merge_changes(doc_type, &changes).await?;
         Ok(json!({"ok": true}))
+    }
+
+    async fn handle_remember_semantic(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let name = args["name"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("name is required"))?;
+        let text = args["text"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("text is required"))?;
+        let rowid = brain.remember_semantic(name, text).await?;
+        Ok(json!({"rowid": rowid, "name": name, "embedded": true}))
+    }
+
+    async fn handle_recall(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let query = args["query"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("query is required"))?;
+        let k = args.get("k").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+        let w = args
+            .get("keyword_weight")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.15) as f32;
+        let hits = brain.recall(query, k, w).await?;
+        Ok(json!({"results": hits}))
+    }
+
+    async fn handle_reindex_facts(&self) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let n = brain.reindex_facts().await?;
+        Ok(json!({"reindexed": n}))
     }
 
     // v0.4: Embedding handlers
