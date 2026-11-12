@@ -19,6 +19,33 @@ use sync::SyncManager;
 use tokio::sync::Mutex;
 use vector::{VectorConfig, VectorEngine};
 
+/// One result of `Koala::recall`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecallHit {
+    pub rowid: i64,
+    pub name: String,
+    pub text: String,
+    pub distance: f32,
+    pub keyword_overlap: f32,
+    pub score: f32,
+}
+
+fn embed_input(name: &str, text: &str) -> String {
+    format!("{}: {}", name.replace('_', " "), text)
+}
+
+fn tokens(s: &str) -> std::collections::HashSet<String> {
+    const STOP: &[&str] = &[
+        "the", "and", "for", "how", "what", "who", "does", "with", "that", "this", "are", "can",
+        "you", "your", "from", "get", "has", "have", "into", "about",
+    ];
+    s.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !STOP.contains(t))
+        .map(|t| t.to_string())
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Koala {
     pub db: Database,
@@ -73,7 +100,7 @@ impl Koala {
             tracing::warn!("Failed to discover plugins on startup: {}", e);
         }
 
-        Ok(Self {
+        let this = Self {
             db,
             model: Arc::new(Mutex::new(None)),
             vector_engine,
@@ -81,7 +108,90 @@ impl Koala {
             embedding_manager,
             plugin_manager,
             plugin_registry,
-        })
+        };
+
+        // Old DB with a different vector dimension: tables were rebuilt, refill them.
+        if this.vector_engine.was_rebuilt() {
+            match this.reindex_facts().await {
+                Ok(n) => tracing::info!("Re-embedded {} facts after dimension change", n),
+                Err(e) => tracing::warn!(
+                    "Could not re-embed facts at startup ({}). Run the reindex_facts tool later.",
+                    e
+                ),
+            }
+        }
+
+        Ok(this)
+    }
+
+    /// Write a fact and embed it in one step. Replaces the vector of the
+    /// previous version of the same name. Returns the new rowid.
+    pub async fn remember_semantic(&self, name: &str, text: &str) -> Result<i64> {
+        let old = self.db.current_fact_rowids(name).await?;
+        let rowid = self.db.write_fact(name, text).await?;
+        let emb = self.embed_text(&embed_input(name, text)).await?;
+        self.vector_upsert_fact(rowid, &emb).await?;
+        for r in old {
+            if r != rowid {
+                let _ = self.vector_delete_fact(r).await;
+            }
+        }
+        Ok(rowid)
+    }
+
+    /// Embed every current fact (used after a model or dimension change).
+    pub async fn reindex_facts(&self) -> Result<usize> {
+        let facts = self.db.current_facts().await?;
+        if facts.is_empty() {
+            return Ok(0);
+        }
+        let inputs: Vec<String> = facts.iter().map(|(_, n, t)| embed_input(n, t)).collect();
+        let refs: Vec<&str> = inputs.iter().map(|s| s.as_str()).collect();
+        let embs = self.embed_batch(&refs).await?;
+        for ((rowid, _, _), emb) in facts.iter().zip(embs.iter()) {
+            self.vector_upsert_fact(*rowid, emb).await?;
+        }
+        Ok(facts.len())
+    }
+
+    /// Hybrid search: vector distance, nudged by keyword overlap so exact
+    /// names and ids that embeddings miss still rank. Lower score is better.
+    pub async fn recall(
+        &self,
+        query: &str,
+        k: usize,
+        keyword_weight: f32,
+    ) -> Result<Vec<RecallHit>> {
+        let qe = self.embed_text(query).await?;
+        let pool = (k * 4).max(20);
+        let cands = self.vector_search_facts(&qe, pool, None).await?;
+        let qtokens = tokens(query);
+        let mut hits = Vec::new();
+        for c in cands {
+            let Some((name, text, current)) = self.db.read_fact_by_rowid(c.id).await? else {
+                continue;
+            };
+            if !current {
+                continue;
+            }
+            let hay = tokens(&format!("{} {}", name.replace('_', " "), text));
+            let overlap = if qtokens.is_empty() {
+                0.0
+            } else {
+                qtokens.iter().filter(|t| hay.contains(*t)).count() as f32 / qtokens.len() as f32
+            };
+            hits.push(RecallHit {
+                rowid: c.id,
+                name,
+                text,
+                distance: c.score,
+                keyword_overlap: overlap,
+                score: c.score - keyword_weight * overlap,
+            });
+        }
+        hits.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.truncate(k);
+        Ok(hits)
     }
 
     pub async fn init_model(&mut self, hidden: usize, lr: f32, activation: &str) -> Result<()> {

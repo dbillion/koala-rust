@@ -330,6 +330,35 @@ impl Database {
         Ok(row.map(|r| (r.get("rowid"), r.get("text"))))
     }
 
+    /// Fetch a fact by rowid. Returns (name, text, is_current).
+    pub async fn read_fact_by_rowid(&self, rowid: i64) -> Result<Option<(String, String, bool)>> {
+        let row = sqlx::query("SELECT name, text, is_current FROM facts WHERE rowid = ?")
+            .bind(rowid)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| (r.get("name"), r.get("text"), r.get::<bool, _>("is_current"))))
+    }
+
+    /// All current facts as (rowid, name, text).
+    pub async fn current_facts(&self) -> Result<Vec<(i64, String, String)>> {
+        let rows = sqlx::query("SELECT rowid, name, text FROM facts WHERE is_current = 1")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get("rowid"), r.get("name"), r.get("text")))
+            .collect())
+    }
+
+    /// Rowids of the current version(s) of a fact name.
+    pub async fn current_fact_rowids(&self, name: &str) -> Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name = ? AND is_current = 1")
+            .bind(name)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+
     pub async fn read_fact_versions(
         &self,
         name: &str,

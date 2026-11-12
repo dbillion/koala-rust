@@ -17,22 +17,44 @@ pub struct EmbeddingConfig {
     pub max_length: usize,
     pub batch_size: usize,
     pub normalize: bool,
+    /// Expected output dimension of the model (env KOALA_EMBED_DIM)
+    pub dim: usize,
 }
 
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
             // Primary recommended model from Model2Vec maintainers
-            model_name: "minishlab/potion-base-8M".to_string(),
+            model_name: configured_model(),
             max_length: 512,
             batch_size: 1024,
             normalize: true,
+            dim: configured_dim(),
         }
     }
 }
 
 /// Embedding dimension for potion-base-8M
 pub const EMBEDDING_DIM: usize = 256;
+
+/// Embedding model name. Override with env KOALA_EMBED_MODEL
+/// (any Model2Vec model, e.g. minishlab/potion-base-32M).
+pub fn configured_model() -> String {
+    std::env::var("KOALA_EMBED_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "minishlab/potion-base-8M".to_string())
+}
+
+/// Embedding dimension. Override with env KOALA_EMBED_DIM when you
+/// change the model (potion-base-8M = 256, potion-base-32M = 512).
+pub fn configured_dim() -> usize {
+    std::env::var("KOALA_EMBED_DIM")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|d| *d > 0)
+        .unwrap_or(EMBEDDING_DIM)
+}
 
 /// Embedding manager with Model2Vec StaticModel and caching
 pub struct EmbeddingManager {
@@ -61,9 +83,20 @@ impl EmbeddingManager {
                 None, // normalize_embeddings
                 None, // subfolder_in_repo
             )?;
+            let probe = model.encode(&["dimension probe".to_string()]);
+            let actual = probe.first().map(|v| v.len()).unwrap_or(0);
+            if actual != self.config.dim {
+                anyhow::bail!(
+                    "Model {} outputs {} dims but KOALA_EMBED_DIM is {}. Set KOALA_EMBED_DIM={}",
+                    self.config.model_name,
+                    actual,
+                    self.config.dim,
+                    actual
+                );
+            }
             info!(
                 "Model2Vec model loaded successfully (dim={})",
-                EMBEDDING_DIM
+                self.config.dim
             );
             *model_guard = Some(model);
         }
@@ -162,7 +195,7 @@ impl EmbeddingManager {
         self.init().await?;
         Ok(format!(
             "Model2Vec: {} (dim={})",
-            self.config.model_name, EMBEDDING_DIM
+            self.config.model_name, self.config.dim
         ))
     }
 }

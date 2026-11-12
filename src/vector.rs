@@ -23,7 +23,7 @@ pub struct VectorConfig {
 impl Default for VectorConfig {
     fn default() -> Self {
         Self {
-            dimension: VECTOR_DIM,
+            dimension: crate::embeddings::configured_dim(),
             hnsw_m: 16,
             hnsw_ef_construction: 200,
             hnsw_ef_search: 64,
@@ -44,17 +44,67 @@ pub struct VectorEngine {
     pool: SqlitePool,
     config: VectorConfig,
     initialized: Arc<RwLock<bool>>,
+    rebuilt: bool,
 }
 
 impl VectorEngine {
     pub async fn new(pool: SqlitePool, config: VectorConfig) -> Result<Self> {
-        let engine = Self {
+        let mut engine = Self {
             pool,
             config,
             initialized: Arc::new(RwLock::new(false)),
+            rebuilt: false,
         };
+        engine.rebuilt = engine.migrate_dimension().await?;
         engine.init().await?;
         Ok(engine)
+    }
+
+    /// True when an old vector table with a different dimension was dropped
+    /// at startup. Caller should re-embed facts (see Koala::reindex_facts).
+    pub fn was_rebuilt(&self) -> bool {
+        self.rebuilt
+    }
+
+    /// Dimension the engine is configured for.
+    pub fn dimension(&self) -> usize {
+        self.config.dimension
+    }
+
+    /// If an existing vec0 table was created with another dimension, drop it
+    /// so it is recreated with the current one. Vectors are re-derivable from
+    /// fact text, so nothing authoritative is lost.
+    async fn migrate_dimension(&self) -> Result<bool> {
+        let row = sqlx::query("SELECT sql FROM sqlite_master WHERE name = 'fact_embeddings'")
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let sql: String = row.get("sql");
+        let stored = sql
+            .to_uppercase()
+            .split("FLOAT[")
+            .nth(1)
+            .and_then(|s| s.split(']').next().map(|d| d.trim().to_string()))
+            .and_then(|d| d.parse::<usize>().ok());
+        match stored {
+            Some(d) if d != self.config.dimension => {
+                tracing::warn!(
+                    "Vector tables were {} dims, model needs {}. Rebuilding (entity vectors are dropped, fact vectors get re-embedded).",
+                    d,
+                    self.config.dimension
+                );
+                sqlx::query("DROP TABLE IF EXISTS fact_embeddings")
+                    .execute(&self.pool)
+                    .await?;
+                let _ = sqlx::query("DROP TABLE IF EXISTS entity_embeddings")
+                    .execute(&self.pool)
+                    .await;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     /// Initialize sqlite-vec extension and create virtual tables

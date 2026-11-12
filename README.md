@@ -13,7 +13,7 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 - Vector search (sqlite-vec HNSW)
 - CRDT-based multi-agent sync (VectorClock)
 - WASM/native plugin marketplace (wasmtime + libloading)
-- MCP server with 50 tools
+- MCP server with 53 tools
 - Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
 
 ---
@@ -30,7 +30,7 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 | **CRDT Sync** | Vector clocks + last-write-wins for multi-agent collaboration |
 | **WASM Plugins** | Sandboxed plugins (wasmtime) + native plugins (libloading) |
 | **Plugin Marketplace** | Install/verify plugins with SHA256 signatures |
-| **MCP Server** | 50 tools via stdio — works with Claude, Hermes, any MCP client |
+| **MCP Server** | 53 tools via stdio — works with Claude, Hermes, any MCP client |
 
 ---
 
@@ -45,7 +45,7 @@ flowchart TB
 
     subgraph Server["koala-rust MCP Server (stdio)"]
         direction TB
-        MCP_HANDLER[MCP Handler 50 tools]
+        MCP_HANDLER[MCP Handler 53 tools]
         
         subgraph Core["Core Services"]
             FACTS[Fact Store<br/>SQLite + versions]
