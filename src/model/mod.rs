@@ -60,6 +60,15 @@ impl std::str::FromStr for Activation {
 }
 
 impl Activation {
+    /// Parse an activation name using the legacy infallible constructor.
+    ///
+    /// Prefer [`str::parse`] when using the standard `FromStr` interface.
+    #[inline(always)]
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &str) -> Self {
+        Self::from_name(s)
+    }
+
     #[inline(always)]
     pub fn from_name(s: &str) -> Self {
         match s {
@@ -520,5 +529,15 @@ impl NeuralModel {
             gpu_reason: "no CUDA; CPU reference is the supported backend".to_string(),
             rank: RankInfo::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod activation_compatibility_tests {
+    use super::Activation;
+
+    #[test]
+    fn legacy_activation_parser_remains_available() {
+        assert_eq!(Activation::from_str("tanh"), Activation::Tanh);
     }
 }

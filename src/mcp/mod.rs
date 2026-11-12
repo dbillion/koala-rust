@@ -52,7 +52,7 @@ impl PeaBrainServer {
         Ok(json!({
             "protocolVersion": "2024-11-05",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "peabrain-rust", "version": "0.2.0" }
+            "serverInfo": { "name": "peabrain-rust", "version": env!("CARGO_PKG_VERSION") }
         }))
     }
 

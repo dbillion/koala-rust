@@ -21,11 +21,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libsqlite3-dev clang
-
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -84,12 +79,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           target: ${{ matrix.target }}
-
-      - name: Install system dependencies for cross-compilation (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Install system dependencies (macOS)
         if: matrix.os == 'macos-latest'
