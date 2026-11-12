@@ -254,6 +254,18 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Small key/value store: embedding model identity and the reindex-pending marker.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS brain_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         // v0.4: Embedding metadata
         sqlx::query(
             r#"
@@ -347,6 +359,71 @@ impl Database {
         Ok(rows
             .into_iter()
             .map(|r| (r.get("rowid"), r.get("name"), r.get("text")))
+            .collect())
+    }
+
+    pub async fn meta_get(&self, key: &str) -> Result<Option<String>> {
+        let row = sqlx::query("SELECT value FROM brain_meta WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.get("value")))
+    }
+
+    pub async fn meta_set(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO brain_meta(key, value) VALUES (?, ?)")
+            .bind(key)
+            .bind(value)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Rowids of current facts whose name or text contains any of the tokens.
+    /// Independent of the vector index, so exact names outside the vector
+    /// candidate pool are still found.
+    pub async fn keyword_fact_candidates(&self, tokens: &[String], limit: i64) -> Result<Vec<i64>> {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let clause = tokens
+            .iter()
+            .map(|_| "(instr(lower(replace(name, '_', ' ')), ?) > 0 OR instr(lower(text), ?) > 0)")
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let sql = format!("SELECT rowid FROM facts WHERE is_current = 1 AND ({clause}) LIMIT ?");
+        let mut q = sqlx::query(&sql);
+        for t in tokens {
+            q = q.bind(t.clone()).bind(t.clone());
+        }
+        let rows = q.bind(limit).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+
+    /// Entities as (rowid, text to embed): name, type and observations.
+    pub async fn entity_texts(&self) -> Result<Vec<(i64, String)>> {
+        let rows = sqlx::query(
+            "SELECT e.rowid AS rowid, e.name AS name, e.type AS type, \
+             group_concat(o.content, '; ') AS obs \
+             FROM entities e LEFT JOIN observations o ON o.entity_name = e.name \
+             GROUP BY e.rowid",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let name: String = r.get("name");
+                let ty: Option<String> = r.get("type");
+                let obs: Option<String> = r.get("obs");
+                let text = format!(
+                    "{} ({}): {}",
+                    name,
+                    ty.unwrap_or_default(),
+                    obs.unwrap_or_default()
+                );
+                (r.get("rowid"), text)
+            })
             .collect())
     }
 
