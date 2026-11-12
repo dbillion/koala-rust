@@ -57,23 +57,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           # Dispatch: build exactly the tag being released. Tag push: the pushed tag.
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust_toolchain }}
           target: ${{ matrix.target }}
-
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          for i in 1 2 3; do sudo apt-get update && break; sleep 30; done
-          sudo apt-get install -y pkg-config
-          # For cross-compilation to ARM64
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          fi
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -104,13 +94,13 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir -p artifacts
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
             cp target/${{ matrix.target }}/release/peabrain-rust.exe artifacts/${{ matrix.artifact }}
           else
             cp target/${{ matrix.target }}/release/peabrain-rust artifacts/${{ matrix.artifact }}
           fi
           # Verify binary works
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
             ./artifacts/${{ matrix.artifact }} --help || true
           else
             chmod +x artifacts/${{ matrix.artifact }}
@@ -128,11 +118,9 @@ jobs:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
-    if: (!cancelled()) && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           path: release-assets
           pattern: peabrain-rust-*
@@ -142,13 +130,26 @@ jobs:
         id: check_assets
         run: |
           mkdir -p release-assets
-          count=$(ls -1 release-assets/peabrain-rust-* 2>/dev/null | wc -l)
-          echo "Found $count release asset(s)"
-          if [ "$count" -eq 0 ]; then
-            echo "has_assets=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_assets=true" >> "$GITHUB_OUTPUT"
+          expected=(
+            peabrain-rust-x86_64-unknown-linux-gnu
+            peabrain-rust-aarch64-unknown-linux-gnu
+            peabrain-rust-x86_64-apple-darwin
+            peabrain-rust-aarch64-apple-darwin
+            peabrain-rust-x86_64-pc-windows-msvc.exe
+          )
+          missing=()
+          for asset in "${expected[@]}"; do
+            if [[ ! -s "release-assets/$asset" ]]; then
+              missing+=("$asset")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required release assets:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
           fi
+          echo "Found all ${#expected[@]} required release assets"
+          echo "has_assets=true" >> "$GITHUB_OUTPUT"
 
       - name: List assets
         if: steps.check_assets.outputs.has_assets == 'true'
@@ -183,7 +184,7 @@ jobs:
             - CRDT-based multi-agent sync (VectorClock)
             - WASM/native plugin marketplace (wasmtime + libloading)
             - MCP server with 50 tools
-            - Cross-platform releases (Linux/macOS/Windows × x86_64/ARM64)
+            - Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
 
             ### Installation
 
@@ -239,7 +240,7 @@ jobs:
     name: Publish to crates.io (optional)
     needs: release
     runs-on: ubuntu-latest
-    if: false  # Set to true and add CARGO_REGISTRY_TOKEN secret to enable
+    if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }} # Set this repository variable and add CARGO_REGISTRY_TOKEN to enable
     steps:
       - uses: actions/checkout@v4
       - name: Publish to crates.io
