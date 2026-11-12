@@ -768,14 +768,14 @@ impl KoalaServer {
     async fn handle_delete_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let name = args["name"].as_str().unwrap();
-        let deleted = brain.db.delete_fact(name).await?;
+        let deleted = brain.delete_fact_and_vector(name).await?;
         Ok(json!({"deleted": deleted}))
     }
 
     async fn handle_delete_fact_prefix(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
         let prefix = args["prefix"].as_str().unwrap();
-        let count = brain.db.delete_fact_prefix(prefix).await?;
+        let count = brain.delete_fact_prefix_and_vectors(prefix).await?;
         Ok(json!({"deleted": count}))
     }
 
@@ -1342,7 +1342,9 @@ impl KoalaServer {
         brain.plugin_registry.uninstall(name).await?;
         // Also unload from plugin manager
         // Unload failure during uninstall is non-fatal; the registry entry is already gone.
-        let _ = brain.plugin_manager.unload_plugin(name).await;
+        if let Err(e) = brain.plugin_manager.unload_plugin(name).await {
+                    tracing::warn!("Unload after uninstall failed: {}", e);
+                }
         Ok(json!({"ok": true}))
     }
 

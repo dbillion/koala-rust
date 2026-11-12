@@ -313,11 +313,20 @@ impl VectorEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::SqlitePool;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn test_vector_engine_rejects_wrong_embedding_dimensions() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        // Same setup as Database::new: vec0 must be loaded on the connection.
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .extension("/usr/local/lib/vec0.so");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
         let engine = VectorEngine::new(pool, VectorConfig::default())
             .await
             .unwrap();
