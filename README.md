@@ -14,7 +14,7 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 - CRDT-based multi-agent sync (VectorClock)
 - WASM/native plugin marketplace (wasmtime + libloading)
 - MCP server with 50 tools
-- Cross-platform releases (Linux/macOS/Windows × x86_64/ARM64)
+- Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
 
 ---
 
@@ -365,12 +365,12 @@ cross build --release --target x86_64-unknown-linux-gnu
 cross build --release --target aarch64-unknown-linux-gnu
 
 # macOS x86_64
-cross build --release --target x86_64-apple-darwin
+cargo build --release --target x86_64-apple-darwin  # run on macOS
 
 # macOS ARM64 (Apple Silicon)
-cross build --release --target aarch64-apple-darwin
+cargo build --release --target aarch64-apple-darwin  # run on macOS
 
-# Windows x86_64
+# Windows x86_64 (run on Windows with MSVC build tools installed)
 cargo build --release --target x86_64-pc-windows-msvc
 ```
 
@@ -381,13 +381,13 @@ The repo includes **two workflows** in `.github/workflows/`:
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | Push/PR to master | Format, clippy, type-check, test, cross-platform check (5 targets) |
-| `release.yml` | Tag push (`v*`) | **Build 6 platform binaries + create GitHub Release** |
+| `release.yml` | Tag push (`v*`) | **Build 5 platform binaries + create GitHub Release** |
 
 **Release on tag push:**
 ```bash
 git tag v0.3.0
 git push origin v0.3.0
-# → CI passes → release.yml builds all 6 targets → creates GitHub Release with binaries
+# → CI passes → release.yml builds all 5 targets → creates GitHub Release with binaries
 ```
 
 **Artifacts produced per release:**

@@ -8,8 +8,8 @@ use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Vector dimension for embeddings (all-MiniLM-L6-v2 = 384)
-pub const VECTOR_DIM: usize = 384;
+/// Vector dimension for the active Model2Vec embedding model.
+pub const VECTOR_DIM: usize = crate::embeddings::EMBEDDING_DIM;
 
 /// Vector search configuration
 #[derive(Debug, Clone)]
@@ -303,18 +303,18 @@ mod tests {
     use sqlx::SqlitePool;
 
     #[tokio::test]
-    async fn test_vector_engine() {
+    async fn test_vector_engine_rejects_wrong_embedding_dimensions() {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        let config = VectorConfig::default();
-        let engine = VectorEngine::new(pool, config).await.unwrap();
+        let engine = VectorEngine::new(pool, VectorConfig::default())
+            .await
+            .unwrap();
+        let wrong_dimension = vec![0.1f32; VECTOR_DIM + 1];
 
-        // Test embedding if vec0 is loaded
-        let embedding = vec![0.1f32; VECTOR_DIM];
-        if engine.upsert_fact_embedding(1, &embedding).await.is_ok() {
-            // Search
-            let results = engine.search_facts(&embedding, 10, None).await.unwrap();
-            assert!(!results.is_empty());
-            assert_eq!(results[0].id, 1);
-        }
+        let error = engine
+            .upsert_fact_embedding(1, &wrong_dimension)
+            .await
+            .expect_err("an embedding with the wrong dimension must be rejected");
+
+        assert!(error.to_string().contains("Embedding dimension mismatch"));
     }
 }
