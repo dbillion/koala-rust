@@ -462,7 +462,7 @@ async fn main() -> Result<()> {
             execute_command(&mut brain, cmd, cli.format).await?;
         }
         None => {
-            println!("PeaBrain Rust v0.2.0");
+            println!("PeaBrain Rust v{}", env!("CARGO_PKG_VERSION"));
             println!("State directory: {}", state_dir.display());
             println!("Use --serve for MCP server, or subcommands for CLI");
         }
