@@ -484,6 +484,15 @@ impl Database {
         Ok(deleted > 0)
     }
 
+    /// Rowids of current facts whose name starts with the prefix.
+    pub async fn current_fact_rowids_prefix(&self, prefix: &str) -> Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name LIKE ? AND is_current = 1")
+            .bind(format!("{}%", prefix))
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+
     pub async fn delete_fact_prefix(&self, prefix: &str) -> Result<i64> {
         let mut tx = self.pool.begin().await?;
         let names: Vec<String> =

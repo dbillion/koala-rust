@@ -152,6 +152,32 @@ impl PeaBrain {
         Ok(rowid)
     }
 
+    /// Delete the current version of a fact and its vector. The fact delete is
+    /// authoritative; a vector cleanup failure only leaves an orphan that
+    /// `recall` skips, so it is logged, not returned.
+    pub async fn delete_fact_and_vector(&self, name: &str) -> Result<bool> {
+        let rowids = self.db.current_fact_rowids(name).await?;
+        let deleted = self.db.delete_fact(name).await?;
+        self.drop_vectors(&rowids).await;
+        Ok(deleted)
+    }
+
+    /// Prefix variant of `delete_fact_and_vector`. Returns the number of facts deleted.
+    pub async fn delete_fact_prefix_and_vectors(&self, prefix: &str) -> Result<i64> {
+        let rowids = self.db.current_fact_rowids_prefix(prefix).await?;
+        let count = self.db.delete_fact_prefix(prefix).await?;
+        self.drop_vectors(&rowids).await;
+        Ok(count)
+    }
+
+    async fn drop_vectors(&self, rowids: &[i64]) {
+        for r in rowids {
+            if let Err(e) = self.vector_delete_fact(*r).await {
+                tracing::warn!("Orphan vector for deleted fact {} not removed: {}", r, e);
+            }
+        }
+    }
+
     /// True while a model or dimension change still needs its vectors rebuilt.
     pub async fn reindex_pending(&self) -> Result<bool> {
         Ok(self.db.meta_get("reindex_pending").await?.as_deref() == Some("1"))

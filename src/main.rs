@@ -504,14 +504,14 @@ async fn execute_command(brain: &mut PeaBrain, cmd: Command, format: OutputForma
             print_output(format, serde_json::json!(versions));
         }
         Command::FactDelete { name } => {
-            let deleted = brain.db.delete_fact(&name).await?;
+            let deleted = brain.delete_fact_and_vector(&name).await?;
             print_output(
                 format,
                 serde_json::json!({"deleted": deleted, "name": name}),
             );
         }
         Command::FactDeletePrefix { prefix } => {
-            let count = brain.db.delete_fact_prefix(&prefix).await?;
+            let count = brain.delete_fact_prefix_and_vectors(&prefix).await?;
             print_output(
                 format,
                 serde_json::json!({"deleted": count, "prefix": prefix}),
