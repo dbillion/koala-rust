@@ -17,8 +17,6 @@ pub struct EmbeddingConfig {
     pub max_length: usize,
     pub batch_size: usize,
     pub normalize: bool,
-    /// Expected output dimension of the model (env KOALA_EMBED_DIM)
-    pub dim: usize,
 }
 
 impl Default for EmbeddingConfig {
@@ -29,7 +27,6 @@ impl Default for EmbeddingConfig {
             max_length: 512,
             batch_size: 1024,
             normalize: true,
-            dim: configured_dim(),
         }
     }
 }
@@ -54,6 +51,12 @@ pub fn configured_dim() -> usize {
         .and_then(|s| s.trim().parse::<usize>().ok())
         .filter(|d| *d > 0)
         .unwrap_or(EMBEDDING_DIM)
+}
+
+/// Identity of the active embedding setup. Stored in the DB so a model
+/// change is noticed even when the dimension stays the same.
+pub fn model_identity() -> String {
+    format!("{}|{}", configured_model(), configured_dim())
 }
 
 /// Embedding manager with Model2Vec StaticModel and caching
@@ -85,19 +88,17 @@ impl EmbeddingManager {
             )?;
             let probe = model.encode(&["dimension probe".to_string()]);
             let actual = probe.first().map(|v| v.len()).unwrap_or(0);
-            if actual != self.config.dim {
+            let want = configured_dim();
+            if actual != want {
                 anyhow::bail!(
                     "Model {} outputs {} dims but KOALA_EMBED_DIM is {}. Set KOALA_EMBED_DIM={}",
                     self.config.model_name,
                     actual,
-                    self.config.dim,
+                    want,
                     actual
                 );
             }
-            info!(
-                "Model2Vec model loaded successfully (dim={})",
-                self.config.dim
-            );
+            info!("Model2Vec model loaded successfully (dim={})", want);
             *model_guard = Some(model);
         }
         Ok(())
@@ -151,9 +152,9 @@ impl EmbeddingManager {
             let embeddings = model.encode(&uncached_texts);
 
             // Fill in results and cache
-            for (idx, embedding) in uncached_indices.into_iter().zip(embeddings) {
+            for ((pos, idx), embedding) in uncached_indices.into_iter().enumerate().zip(embeddings) {
                 self.cache
-                    .insert(uncached_texts[idx].clone(), embedding.clone());
+                    .insert(uncached_texts[pos].clone(), embedding.clone());
                 results[idx] = embedding;
             }
         }
@@ -195,7 +196,8 @@ impl EmbeddingManager {
         self.init().await?;
         Ok(format!(
             "Model2Vec: {} (dim={})",
-            self.config.model_name, self.config.dim
+            self.config.model_name,
+            configured_dim()
         ))
     }
 }

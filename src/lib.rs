@@ -110,15 +110,27 @@ impl Koala {
             plugin_registry,
         };
 
-        // Old DB with a different vector dimension: tables were rebuilt, refill them.
-        if this.vector_engine.was_rebuilt() {
+        // Reindex when vector tables were rebuilt, the embedding model changed
+        // (even at the same dimension), or an earlier reindex never finished.
+        // A failure leaves the marker set: the server still starts, and the
+        // reindex is retried at the next startup or via the reindex_facts tool.
+        let model_id = embeddings::model_identity();
+        let stored = this.db.meta_get("embed_model").await?;
+        let pending = this.reindex_pending().await?;
+        if this.vector_engine.was_rebuilt()
+            || pending
+            || stored.as_deref().is_some_and(|m| m != model_id)
+        {
+            this.db.meta_set("reindex_pending", "1").await?;
             match this.reindex_facts().await {
-                Ok(n) => tracing::info!("Re-embedded {} facts after dimension change", n),
+                Ok(n) => tracing::info!("Re-embedded {} facts after model or dimension change", n),
                 Err(e) => tracing::warn!(
-                    "Could not re-embed facts at startup ({}). Run the reindex_facts tool later.",
+                    "Reindex failed ({}). Search is degraded until it succeeds; it is retried at next startup or run the reindex_facts tool.",
                     e
                 ),
             }
+        } else if stored.is_none() {
+            this.db.meta_set("embed_model", &model_id).await?;
         }
 
         Ok(this)
@@ -127,31 +139,57 @@ impl Koala {
     /// Write a fact and embed it in one step. Replaces the vector of the
     /// previous version of the same name. Returns the new rowid.
     pub async fn remember_semantic(&self, name: &str, text: &str) -> Result<i64> {
+        // Embed first: if the model fails, no fact is written without a vector.
+        let emb = self.embed_text(&embed_input(name, text)).await?;
         let old = self.db.current_fact_rowids(name).await?;
         let rowid = self.db.write_fact(name, text).await?;
-        let emb = self.embed_text(&embed_input(name, text)).await?;
         self.vector_upsert_fact(rowid, &emb).await?;
         for r in old {
             if r != rowid {
-                let _ = self.vector_delete_fact(r).await;
+                self.vector_delete_fact(r).await?;
             }
         }
         Ok(rowid)
     }
 
-    /// Embed every current fact (used after a model or dimension change).
+    /// True while a model or dimension change still needs its vectors rebuilt.
+    pub async fn reindex_pending(&self) -> Result<bool> {
+        Ok(self.db.meta_get("reindex_pending").await?.as_deref() == Some("1"))
+    }
+
+    /// Embed every current fact, in batches. When a model or dimension change
+    /// is pending, entity vectors are re-derived from their stored text too,
+    /// and the pending marker is cleared only after both succeed.
     pub async fn reindex_facts(&self) -> Result<usize> {
         let facts = self.db.current_facts().await?;
-        if facts.is_empty() {
-            return Ok(0);
+        for chunk in facts.chunks(256) {
+            let inputs: Vec<String> = chunk.iter().map(|(_, n, t)| embed_input(n, t)).collect();
+            let refs: Vec<&str> = inputs.iter().map(|s| s.as_str()).collect();
+            let embs = self.embed_batch(&refs).await?;
+            for ((rowid, _, _), emb) in chunk.iter().zip(embs.iter()) {
+                self.vector_upsert_fact(*rowid, emb).await?;
+            }
         }
-        let inputs: Vec<String> = facts.iter().map(|(_, n, t)| embed_input(n, t)).collect();
-        let refs: Vec<&str> = inputs.iter().map(|s| s.as_str()).collect();
-        let embs = self.embed_batch(&refs).await?;
-        for ((rowid, _, _), emb) in facts.iter().zip(embs.iter()) {
-            self.vector_upsert_fact(*rowid, emb).await?;
+        if self.reindex_pending().await? {
+            self.reindex_entities().await?;
+            self.db
+                .meta_set("embed_model", &embeddings::model_identity())
+                .await?;
+            self.db.meta_set("reindex_pending", "0").await?;
         }
         Ok(facts.len())
+    }
+
+    async fn reindex_entities(&self) -> Result<usize> {
+        let ents = self.db.entity_texts().await?;
+        for chunk in ents.chunks(256) {
+            let inputs: Vec<&str> = chunk.iter().map(|(_, t)| t.as_str()).collect();
+            let embs = self.embed_batch(&inputs).await?;
+            for ((rowid, _), emb) in chunk.iter().zip(embs.iter()) {
+                self.vector_upsert_entity(*rowid, emb).await?;
+            }
+        }
+        Ok(ents.len())
     }
 
     /// Hybrid search: vector distance, nudged by keyword overlap so exact
@@ -163,12 +201,27 @@ impl Koala {
         keyword_weight: f32,
     ) -> Result<Vec<RecallHit>> {
         let qe = self.embed_text(query).await?;
-        let pool = (k * 4).max(20);
+        let pool = k.saturating_mul(4).clamp(20, 1000);
         let cands = self.vector_search_facts(&qe, pool, None).await?;
         let qtokens = tokens(query);
+
+        // Independent keyword path: exact names outside the vector pool still
+        // get in. They carry the worst vector distance, so only the keyword
+        // overlap can lift them above real vector hits.
+        let qvec: Vec<String> = qtokens.iter().cloned().collect();
+        let kw_ids = self.db.keyword_fact_candidates(&qvec, pool as i64).await?;
+        let worst = cands.iter().map(|c| c.score).fold(f32::NEG_INFINITY, f32::max);
+        let fallback = if worst.is_finite() { worst } else { 1.5 };
+        let mut pairs: Vec<(i64, f32)> = cands.iter().map(|c| (c.id, c.score)).collect();
+        for id in kw_ids {
+            if !pairs.iter().any(|(i, _)| *i == id) {
+                pairs.push((id, fallback));
+            }
+        }
+
         let mut hits = Vec::new();
-        for c in cands {
-            let Some((name, text, current)) = self.db.read_fact_by_rowid(c.id).await? else {
+        for (id, dist) in pairs {
+            let Some((name, text, current)) = self.db.read_fact_by_rowid(id).await? else {
                 continue;
             };
             if !current {
@@ -181,15 +234,15 @@ impl Koala {
                 qtokens.iter().filter(|t| hay.contains(*t)).count() as f32 / qtokens.len() as f32
             };
             hits.push(RecallHit {
-                rowid: c.id,
+                rowid: id,
                 name,
                 text,
-                distance: c.score,
+                distance: dist,
                 keyword_overlap: overlap,
-                score: c.score - keyword_weight * overlap,
+                score: dist - keyword_weight * overlap,
             });
         }
-        hits.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| a.score.total_cmp(&b.score));
         hits.truncate(k);
         Ok(hits)
     }

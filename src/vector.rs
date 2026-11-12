@@ -1,14 +1,16 @@
 //! Vector Search Module (v0.2)
 //!
 //! Implements semantic search using sqlite-vec extension.
-//! Provides HNSW-based vector indexing for facts and entities.
+//! Exact (brute-force) KNN over sqlite-vec vec0 tables for facts and entities.
+//! There is no HNSW index; the hnsw_* config fields are unused.
 
 use anyhow::Result;
 use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Vector dimension for the active Model2Vec embedding model.
+/// Default vector dimension (potion-base-8M). The live value comes from
+/// `VectorEngine::dimension()` and env KOALA_EMBED_DIM.
 pub const VECTOR_DIM: usize = crate::embeddings::EMBEDDING_DIM;
 
 /// Vector search configuration
@@ -95,12 +97,19 @@ impl VectorEngine {
                     d,
                     self.config.dimension
                 );
+                // Persist the marker first: if we crash after the drop, the next
+                // startup still knows the vectors must be rebuilt.
+                sqlx::query(
+                    "INSERT OR REPLACE INTO brain_meta(key, value) VALUES ('reindex_pending', '1')",
+                )
+                .execute(&self.pool)
+                .await?;
                 sqlx::query("DROP TABLE IF EXISTS fact_embeddings")
                     .execute(&self.pool)
                     .await?;
-                let _ = sqlx::query("DROP TABLE IF EXISTS entity_embeddings")
+                sqlx::query("DROP TABLE IF EXISTS entity_embeddings")
                     .execute(&self.pool)
-                    .await;
+                    .await?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -130,58 +139,12 @@ impl VectorEngine {
 
     async fn create_tables(&self) -> Result<()> {
         let dim = self.config.dimension;
-        let m = self.config.hnsw_m;
-        let ef_construction = self.config.hnsw_ef_construction;
-
-        // Try to create virtual tables - will fail gracefully if vec0 not available
-        let result = async {
-            // Create virtual table for fact embeddings
+        for table in ["fact_embeddings", "entity_embeddings"] {
             sqlx::query(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
-                    embedding FLOAT[{}]
-                )",
-                dim
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0(embedding FLOAT[{dim}])"
             ))
             .execute(&self.pool)
             .await?;
-
-            // Create virtual table for entity embeddings
-            sqlx::query(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS entity_embeddings USING vec0(
-                    embedding FLOAT[{}]
-                )",
-                dim
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            // Create HNSW index for fact embeddings
-            sqlx::query(&format!(
-                "CREATE INDEX IF NOT EXISTS fact_embeddings_hnsw ON fact_embeddings(
-                    embedding
-                ) USING hnsw(m={}, ef_construction={})",
-                m, ef_construction
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            // Create HNSW index for entity embeddings
-            sqlx::query(&format!(
-                "CREATE INDEX IF NOT EXISTS entity_embeddings_hnsw ON entity_embeddings(
-                    embedding
-                ) USING hnsw(m={}, ef_construction={})",
-                m, ef_construction
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            Ok::<(), anyhow::Error>(())
-        }
-        .await;
-
-        if let Err(e) = result {
-            // Vec0 extension not available - vector search will be disabled
-            let _ = e;
         }
         Ok(())
     }

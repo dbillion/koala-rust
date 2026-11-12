@@ -10,7 +10,7 @@
 
 This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
 - Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
-- Vector search (sqlite-vec HNSW)
+- Vector search (sqlite-vec, exact KNN)
 - CRDT-based multi-agent sync (VectorClock)
 - WASM/native plugin marketplace (wasmtime + libloading)
 - MCP server with 53 tools
@@ -23,7 +23,7 @@ This project is a **Rust rewrite and evolution** of the original [Koala](https:/
 | Feature | Description |
 |---------|-------------|
 | **Persistent Facts** | Versioned key-value storage with SQLite |
-| **Semantic Search** | HNSW vector search via `sqlite-vec` (256-dim embeddings) |
+| **Semantic Search** | Exact KNN vector search via `sqlite-vec` (256-dim embeddings) |
 | **Real Embeddings** | Local Model2Vec + `potion-base-8M` (256-dim, ~30 MB, downloads from Hugging Face once on first use) |
 | **Knowledge Graph** | Entities, observations, relations with graph traversal |
 | **Task Management** | Structured tasks/notes with queries and updates |
@@ -55,7 +55,7 @@ flowchart TB
         end
         
         subgraph Vector["Vector Engine"]
-            SQLITE_VEC[(sqlite-vec HNSW)]
+            SQLITE_VEC[(sqlite-vec exact KNN)]
             EMBEDDINGS[Model2Vec + potion-base-8M]
         end
         
@@ -224,7 +224,7 @@ koala-rust plugin-call --name hash-tools --tool sha256 --input "hello"
 
 ---
 
-## 🔌 MCP Tools (50 Total)
+## 🔌 MCP Tools (53 Total)
 
 | Category | Tools |
 |----------|-------|
@@ -235,6 +235,7 @@ koala-rust plugin-call --name hash-tools --tool sha256 --input "hello"
 | **Neural Model** | `model_init`, `model_train`, `model_predict`, `model_status`, `feedback`, `explain_rank`, `sequential_thinking`, `conclusion`, `thought_history`, `thought_reset`, `model_save`, `model_load` |
 | **Vector Search** | `vector_upsert_fact`, `vector_upsert_entity`, `vector_search_facts`, `vector_search_entities`, `vector_delete_fact`, `vector_delete_entity` |
 | **Sync (CRDT)** | `sync_write_fact`, `sync_read_fact`, `sync_list_facts`, `sync_create_entity`, `sync_get_changes`, `sync_merge_changes` |
+| **Semantic memory** | `remember_semantic`, `recall`, `reindex_facts` |
 | **Embeddings** | `embed_text`, `embed_batch` |
 | **Plugins** | `plugin_load`, `plugin_call`, `plugin_list`, `plugin_discover` |
 | **Marketplace** | `plugin_search`, `plugin_install`, `plugin_uninstall`, `plugin_registry_stats`, `plugin_update_registry` |

@@ -1250,6 +1250,7 @@ impl KoalaServer {
             .get("keyword_weight")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.15) as f32;
+        let w = if w.is_finite() { w.clamp(0.0, 1.0) } else { 0.15 };
         let hits = brain.recall(query, k, w).await?;
         Ok(json!({"results": hits}))
     }
