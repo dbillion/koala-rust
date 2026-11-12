@@ -93,7 +93,7 @@ jobs:
                   <ul>
                       <li><strong>Database Engine (<code>src/db/</code>)</strong>: SQLite-backed ACID storage for facts, entities, relations, sequential thoughts, and scoring feedback.</li>
                       <li><strong>Vector Engine (<code>src/vector/</code>)</strong>: SQLite-vec integration with HNSW indexing for hybrid and cosine semantic search.</li>
-                      <li><strong>Embeddings (<code>src/embeddings/</code>)</strong>: Local on-device embeddings via Candle neural models (all-MiniLM-L6-v2).</li>
+                      <li><strong>Embeddings (<code>src/embeddings/</code>)</strong>: Local on-device embeddings via Model2Vec and potion-base-8M (256 dimensions).</li>
                       <li><strong>Sync Manager (<code>src/sync/</code>)</strong>: Multi-agent state synchronization using Automerge CRDTs.</li>
                       <li><strong>Plugin Host (<code>src/plugins.rs</code>)</strong>: Sandboxed WebAssembly (Wasmtime) and native dynamic library plugin loading.</li>
                       <li><strong>MCP Server (<code>src/mcp/</code>)</strong>: Stdio-based JSON-RPC protocol implementation providing 50+ tools for AI coding assistants.</li>
