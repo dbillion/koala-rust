@@ -1,1 +1,250 @@
-reall
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (e.g. v0.3.0) - must match an existing tag'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: koala-rust-x86_64-unknown-linux-gnu
+            rust_toolchain: stable
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            artifact: koala-rust-aarch64-unknown-linux-gnu
+            rust_toolchain: stable
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: koala-rust-x86_64-apple-darwin
+            rust_toolchain: stable
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: koala-rust-aarch64-apple-darwin
+            rust_toolchain: stable
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: koala-rust-x86_64-pc-windows-msvc.exe
+            rust_toolchain: stable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Dispatch: build exactly the tag being released. Tag push: the pushed tag.
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust_toolchain }}
+          target: ${{ matrix.target }}
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install sqlite3 pkg-config
+
+      - name: Install cross (for cross-compilation)
+        if: matrix.cross == 'true'
+        run: cargo install cross --locked
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build (native)
+        if: matrix.cross != 'true'
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          ls -la target/${{ matrix.target }}/release/
+
+      - name: Build (cross)
+        if: matrix.cross == 'true'
+        run: |
+          cross build --release --target ${{ matrix.target }}
+          ls -la target/${{ matrix.target }}/release/
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifacts
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp target/${{ matrix.target }}/release/koala-rust.exe artifacts/${{ matrix.artifact }}
+          else
+            cp target/${{ matrix.target }}/release/koala-rust artifacts/${{ matrix.artifact }}
+          fi
+          # Verify binary works
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./artifacts/${{ matrix.artifact }} --help || true
+          else
+            chmod +x artifacts/${{ matrix.artifact }}
+            ./artifacts/${{ matrix.artifact }} --help || true
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifacts/${{ matrix.artifact }}
+          retention-days: 90
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: koala-rust-*
+          merge-multiple: true
+
+      - name: Check assets
+        id: check_assets
+        run: |
+          mkdir -p release-assets
+          expected=(
+            koala-rust-x86_64-unknown-linux-gnu
+            koala-rust-aarch64-unknown-linux-gnu
+            koala-rust-x86_64-apple-darwin
+            koala-rust-aarch64-apple-darwin
+            koala-rust-x86_64-pc-windows-msvc.exe
+          )
+          missing=()
+          for asset in "${expected[@]}"; do
+            if [[ ! -s "release-assets/$asset" ]]; then
+              missing+=("$asset")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required release assets:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            exit 1
+          fi
+          echo "Found all ${#expected[@]} required release assets"
+          echo "has_assets=true" >> "$GITHUB_OUTPUT"
+
+      - name: List assets
+        if: steps.check_assets.outputs.has_assets == 'true'
+        run: |
+          ls -la release-assets/
+
+      - name: Generate checksums
+        if: steps.check_assets.outputs.has_assets == 'true'
+        run: |
+          cd release-assets
+          sha256sum koala-rust-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create Release
+        if: steps.check_assets.outputs.has_assets == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: koala-rust ${{ inputs.tag || github.ref_name }}
+          body: |
+            ## koala-rust ${{ inputs.tag || github.ref_name }}
+
+            **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
+
+            A single binary that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+
+            ### 🙏 Attribution
+
+            This project is an independently developed open-source memory server for AI agents, built from scratch in Rust.
+            - Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
+            - Vector search (sqlite-vec HNSW)
+            - CRDT-based multi-agent sync (VectorClock)
+            - WASM/native plugin marketplace (wasmtime + libloading)
+            - MCP server with 50 tools
+            - Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
+
+            ### Installation
+
+            **Binary (recommended):**
+            ```bash
+            # Linux x86_64
+            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-unknown-linux-gnu -o koala-rust
+            chmod +x koala-rust
+
+            # Linux ARM64
+            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-unknown-linux-gnu -o koala-rust
+            chmod +x koala-rust
+
+            # macOS x86_64 (Intel)
+            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-apple-darwin -o koala-rust
+            chmod +x koala-rust
+
+            # macOS ARM64 (Apple Silicon)
+            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-apple-darwin -o koala-rust
+            chmod +x koala-rust
+
+            # Windows x86_64
+            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-pc-windows-msvc.exe -o koala-rust.exe
+            ```
+
+            **Via Cargo:**
+            ```bash
+            cargo install --git https://github.com/dbillion/koala-rust --tag ${{ inputs.tag || github.ref_name }}
+            ```
+
+            ### Quick Start
+            ```bash
+            export KOALA_STATE_DIR=~/.koala
+            ./koala-rust --serve
+            ```
+
+            ### Verify Downloads
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ### What's New
+            See [CHANGELOG](https://github.com/dbillion/koala-rust/blob/master/CHANGELOG.md) (if exists) or commit history.
+
+          files: |
+            release-assets/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-cargo:
+    name: Publish to crates.io (optional)
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
