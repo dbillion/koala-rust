@@ -37,8 +37,8 @@ model2vec-rs = "0.4"
 tokenizers = "0.19"
 
 # v0.5: Plugin system
-wasmtime = "25.0"
-wasmtime-wasi = "25.0"
+wasmtime = "24.0"
+wasmtime-wasi = "24.0"
 libloading = "0.8"
 
 # Utilities

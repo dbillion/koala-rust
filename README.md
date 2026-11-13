@@ -6,16 +6,6 @@
 
 ---
 
-### 🙏 Attribution
-
-This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
-- Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
-- Vector search (sqlite-vec, exact KNN)
-- CRDT-based multi-agent sync (VectorClock)
-- WASM/native plugin marketplace (wasmtime + libloading)
-- MCP server with 53 tools
-- Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
-
 ---
 
 ## ✨ Features

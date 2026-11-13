@@ -30,25 +30,25 @@ jobs:
           # Linux
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: koala-rust-x86_64-unknown-linux-gnu
+            artifact: koala-dock-x86_64-unknown-linux-gnu
             rust_toolchain: stable
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-            artifact: koala-rust-aarch64-unknown-linux-gnu
+            artifact: koala-dock-aarch64-unknown-linux-gnu
             rust_toolchain: stable
           # macOS
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: koala-rust-x86_64-apple-darwin
+            artifact: koala-dock-x86_64-apple-darwin
             rust_toolchain: stable
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: koala-rust-aarch64-apple-darwin
+            artifact: koala-dock-aarch64-apple-darwin
             rust_toolchain: stable
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact: koala-rust-x86_64-pc-windows-msvc.exe
+            artifact: koala-dock-x86_64-pc-windows-msvc.exe
             rust_toolchain: stable
 
     steps:
@@ -94,9 +94,9 @@ jobs:
         run: |
           mkdir -p artifacts
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp target/${{ matrix.target }}/release/koala-rust.exe artifacts/${{ matrix.artifact }}
+            cp target/${{ matrix.target }}/release/koala-dock.exe artifacts/${{ matrix.artifact }}
           else
-            cp target/${{ matrix.target }}/release/koala-rust artifacts/${{ matrix.artifact }}
+            cp target/${{ matrix.target }}/release/koala-dock artifacts/${{ matrix.artifact }}
           fi
           # Verify binary works
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -122,7 +122,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-assets
-          pattern: koala-rust-*
+          pattern: koala-dock-*
           merge-multiple: true
 
       - name: Check assets
@@ -130,11 +130,11 @@ jobs:
         run: |
           mkdir -p release-assets
           expected=(
-            koala-rust-x86_64-unknown-linux-gnu
-            koala-rust-aarch64-unknown-linux-gnu
-            koala-rust-x86_64-apple-darwin
-            koala-rust-aarch64-apple-darwin
-            koala-rust-x86_64-pc-windows-msvc.exe
+            koala-dock-x86_64-unknown-linux-gnu
+            koala-dock-aarch64-unknown-linux-gnu
+            koala-dock-x86_64-apple-darwin
+            koala-dock-aarch64-apple-darwin
+            koala-dock-x86_64-pc-windows-msvc.exe
           )
           missing=()
           for asset in "${expected[@]}"; do
@@ -159,7 +159,7 @@ jobs:
         if: steps.check_assets.outputs.has_assets == 'true'
         run: |
           cd release-assets
-          sha256sum koala-rust-* > SHA256SUMS.txt
+          sha256sum koala-dock-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Create Release
@@ -167,9 +167,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
-          name: koala-rust ${{ inputs.tag || github.ref_name }}
+          name: koala-dock ${{ inputs.tag || github.ref_name }}
           body: |
-            ## koala-rust ${{ inputs.tag || github.ref_name }}
+            ## koala-dock ${{ inputs.tag || github.ref_name }}
 
             **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
 
@@ -177,7 +177,7 @@ jobs:
 
             ### 🙏 Attribution
 
-            This project is a **Rust rewrite and evolution** of the original [Koala](https://github.com/akadatalimited/Koala) by [AkaData Limited](https://www.linkedin.com/in/akadatalimited/) — extending it with:
+            This project is an independently developed open-source memory server for AI agents, built from scratch in Rust.
             - Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
             - Vector search (sqlite-vec HNSW)
             - CRDT-based multi-agent sync (VectorClock)
@@ -190,34 +190,34 @@ jobs:
             **Binary (recommended):**
             ```bash
             # Linux x86_64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-unknown-linux-gnu -o koala-rust
-            chmod +x koala-rust
+            curl -L https://github.com/dbillion/koala-dock/releases/download/${{ inputs.tag || github.ref_name }}/koala-dock-x86_64-unknown-linux-gnu -o koala-dock
+            chmod +x koala-dock
 
             # Linux ARM64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-unknown-linux-gnu -o koala-rust
-            chmod +x koala-rust
+            curl -L https://github.com/dbillion/koala-dock/releases/download/${{ inputs.tag || github.ref_name }}/koala-dock-aarch64-unknown-linux-gnu -o koala-dock
+            chmod +x koala-dock
 
             # macOS x86_64 (Intel)
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-apple-darwin -o koala-rust
-            chmod +x koala-rust
+            curl -L https://github.com/dbillion/koala-dock/releases/download/${{ inputs.tag || github.ref_name }}/koala-dock-x86_64-apple-darwin -o koala-dock
+            chmod +x koala-dock
 
             # macOS ARM64 (Apple Silicon)
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-apple-darwin -o koala-rust
-            chmod +x koala-rust
+            curl -L https://github.com/dbillion/koala-dock/releases/download/${{ inputs.tag || github.ref_name }}/koala-dock-aarch64-apple-darwin -o koala-dock
+            chmod +x koala-dock
 
             # Windows x86_64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-pc-windows-msvc.exe -o koala-rust.exe
+            curl -L https://github.com/dbillion/koala-dock/releases/download/${{ inputs.tag || github.ref_name }}/koala-dock-x86_64-pc-windows-msvc.exe -o koala-dock.exe
             ```
 
             **Via Cargo:**
             ```bash
-            cargo install --git https://github.com/dbillion/koala-rust --tag ${{ inputs.tag || github.ref_name }}
+            cargo install --git https://github.com/dbillion/koala-dock --tag ${{ inputs.tag || github.ref_name }}
             ```
 
             ### Quick Start
             ```bash
             export KOALA_STATE_DIR=~/.koala
-            ./koala-rust --serve
+            ./koala-dock --serve
             ```
 
             ### Verify Downloads
@@ -226,7 +226,7 @@ jobs:
             ```
 
             ### What's New
-            See [CHANGELOG](https://github.com/dbillion/koala-rust/blob/master/CHANGELOG.md) (if exists) or commit history.
+            See [CHANGELOG](https://github.com/dbillion/koala-dock/blob/master/CHANGELOG.md) (if exists) or commit history.
 
           files: |
             release-assets/*
