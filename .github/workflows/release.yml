@@ -33,10 +33,9 @@ jobs:
             artifact: peabrain-rust-x86_64-unknown-linux-gnu
             rust_toolchain: stable
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             artifact: peabrain-rust-aarch64-unknown-linux-gnu
             rust_toolchain: stable
-            cross: true
           # macOS
           - target: x86_64-apple-darwin
             os: macos-latest
@@ -243,7 +242,8 @@ jobs:
     if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }} # Set this repository variable and add CARGO_REGISTRY_TOKEN to enable
     steps:
       - uses: actions/checkout@v4
-      - name: Publish to crates.io
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

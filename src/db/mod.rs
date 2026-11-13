@@ -53,6 +53,31 @@ pub struct HealthInfo {
 
 // ===== DATABASE STRUCT =====
 
+/// Path of the sqlite-vec extension. Override with env PEABRAIN_VEC0_PATH.
+/// On non-Linux platforms the extension is loaded from the directory of the
+/// running binary so the release ships `vec0.dll` / `vec0.dylib` next to it;
+/// Linux keeps the traditional system path.
+pub fn vec0_path() -> String {
+    std::env::var("PEABRAIN_VEC0_PATH")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|_| "/usr/local/lib/vec0.so".to_string());
+                let dir = exe.parent().unwrap_or_else(|| "/usr/local/lib".into());
+                let ext = if cfg!(target_os = "windows") {
+                    "vec0.dll"
+                } else {
+                    "vec0.dylib"
+                };
+                dir.join(ext).to_string_lossy().to_string()
+            } else {
+                "/usr/local/lib/vec0.so".to_string()
+            }
+        })
+}
+
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,
@@ -74,8 +99,7 @@ impl Database {
 
         // Create pool with sqlite-vec extension loaded on every connection
         let db_url = format!("sqlite://{}?mode=rwc", abs_path.display());
-        let connect_opts =
-            SqliteConnectOptions::from_str(&db_url)?.extension("/usr/local/lib/vec0.so");
+        let connect_opts = SqliteConnectOptions::from_str(&db_url)?.extension(vec0_path());
         let pool = SqlitePool::connect_with(connect_opts).await?;
 
         let db = Self { pool };
@@ -254,6 +278,18 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Small key/value store: embedding model identity and the reindex-pending marker.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS brain_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         // v0.4: Embedding metadata
         sqlx::query(
             r#"
@@ -330,6 +366,100 @@ impl Database {
         Ok(row.map(|r| (r.get("rowid"), r.get("text"))))
     }
 
+    /// Fetch a fact by rowid. Returns (name, text, is_current).
+    pub async fn read_fact_by_rowid(&self, rowid: i64) -> Result<Option<(String, String, bool)>> {
+        let row = sqlx::query("SELECT name, text, is_current FROM facts WHERE rowid = ?")
+            .bind(rowid)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| (r.get("name"), r.get("text"), r.get::<bool, _>("is_current"))))
+    }
+
+    /// All current facts as (rowid, name, text).
+    pub async fn current_facts(&self) -> Result<Vec<(i64, String, String)>> {
+        let rows = sqlx::query("SELECT rowid, name, text FROM facts WHERE is_current = 1")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get("rowid"), r.get("name"), r.get("text")))
+            .collect())
+    }
+
+    pub async fn meta_get(&self, key: &str) -> Result<Option<String>> {
+        let row = sqlx::query("SELECT value FROM brain_meta WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| r.get("value")))
+    }
+
+    pub async fn meta_set(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO brain_meta(key, value) VALUES (?, ?)")
+            .bind(key)
+            .bind(value)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Rowids of current facts whose name or text contains any of the tokens.
+    /// Independent of the vector index, so exact names outside the vector
+    /// candidate pool are still found.
+    pub async fn keyword_fact_candidates(&self, tokens: &[String], limit: i64) -> Result<Vec<i64>> {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let clause = tokens
+            .iter()
+            .map(|_| "(instr(lower(replace(name, '_', ' ')), ?) > 0 OR instr(lower(text), ?) > 0)")
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        let sql = format!("SELECT rowid FROM facts WHERE is_current = 1 AND ({clause}) LIMIT ?");
+        let mut q = sqlx::query(&sql);
+        for t in tokens {
+            q = q.bind(t.clone()).bind(t.clone());
+        }
+        let rows = q.bind(limit).fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+
+    /// Entities as (rowid, text to embed): name, type and observations.
+    pub async fn entity_texts(&self) -> Result<Vec<(i64, String)>> {
+        let rows = sqlx::query(
+            "SELECT e.rowid AS rowid, e.name AS name, e.type AS type, \
+             group_concat(o.content, '; ') AS obs \
+             FROM entities e LEFT JOIN observations o ON o.entity_name = e.name \
+             GROUP BY e.rowid",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                let name: String = r.get("name");
+                let ty: Option<String> = r.get("type");
+                let obs: Option<String> = r.get("obs");
+                let text = format!(
+                    "{} ({}): {}",
+                    name,
+                    ty.unwrap_or_default(),
+                    obs.unwrap_or_default()
+                );
+                (r.get("rowid"), text)
+            })
+            .collect())
+    }
+
+    /// Rowids of the current version(s) of a fact name.
+    pub async fn current_fact_rowids(&self, name: &str) -> Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name = ? AND is_current = 1")
+            .bind(name)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+
     pub async fn read_fact_versions(
         &self,
         name: &str,
@@ -376,6 +506,15 @@ impl Database {
         }
         tx.commit().await?;
         Ok(deleted > 0)
+    }
+
+    /// Rowids of current facts whose name starts with the prefix.
+    pub async fn current_fact_rowids_prefix(&self, prefix: &str) -> Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name LIKE ? AND is_current = 1")
+            .bind(format!("{}%", prefix))
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
     }
 
     pub async fn delete_fact_prefix(&self, prefix: &str) -> Result<i64> {
