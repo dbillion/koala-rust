@@ -1,14 +1,16 @@
 //! Vector Search Module (v0.2)
 //!
 //! Implements semantic search using sqlite-vec extension.
-//! Provides HNSW-based vector indexing for facts and entities.
+//! Exact (brute-force) KNN over sqlite-vec vec0 tables for facts and entities.
+//! There is no HNSW index; the hnsw_* config fields are unused.
 
 use anyhow::Result;
 use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Vector dimension for the active Model2Vec embedding model.
+/// Default vector dimension (potion-base-8M). The live value comes from
+/// `VectorEngine::dimension()` and env KOALA_EMBED_DIM.
 pub const VECTOR_DIM: usize = crate::embeddings::EMBEDDING_DIM;
 
 /// Vector search configuration
@@ -23,7 +25,7 @@ pub struct VectorConfig {
 impl Default for VectorConfig {
     fn default() -> Self {
         Self {
-            dimension: VECTOR_DIM,
+            dimension: crate::embeddings::configured_dim(),
             hnsw_m: 16,
             hnsw_ef_construction: 200,
             hnsw_ef_search: 64,
@@ -44,17 +46,74 @@ pub struct VectorEngine {
     pool: SqlitePool,
     config: VectorConfig,
     initialized: Arc<RwLock<bool>>,
+    rebuilt: bool,
 }
 
 impl VectorEngine {
     pub async fn new(pool: SqlitePool, config: VectorConfig) -> Result<Self> {
-        let engine = Self {
+        let mut engine = Self {
             pool,
             config,
             initialized: Arc::new(RwLock::new(false)),
+            rebuilt: false,
         };
+        engine.rebuilt = engine.migrate_dimension().await?;
         engine.init().await?;
         Ok(engine)
+    }
+
+    /// True when an old vector table with a different dimension was dropped
+    /// at startup. Caller should re-embed facts (see Koala::reindex_facts).
+    pub fn was_rebuilt(&self) -> bool {
+        self.rebuilt
+    }
+
+    /// Dimension the engine is configured for.
+    pub fn dimension(&self) -> usize {
+        self.config.dimension
+    }
+
+    /// If an existing vec0 table was created with another dimension, drop it
+    /// so it is recreated with the current one. Vectors are re-derivable from
+    /// fact text, so nothing authoritative is lost.
+    async fn migrate_dimension(&self) -> Result<bool> {
+        let row = sqlx::query("SELECT sql FROM sqlite_master WHERE name = 'fact_embeddings'")
+            .fetch_optional(&self.pool)
+            .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        let sql: String = row.get("sql");
+        let stored = sql
+            .to_uppercase()
+            .split("FLOAT[")
+            .nth(1)
+            .and_then(|s| s.split(']').next().map(|d| d.trim().to_string()))
+            .and_then(|d| d.parse::<usize>().ok());
+        match stored {
+            Some(d) if d != self.config.dimension => {
+                tracing::warn!(
+                    "Vector tables were {} dims, model needs {}. Rebuilding (entity vectors are dropped, fact vectors get re-embedded).",
+                    d,
+                    self.config.dimension
+                );
+                // Persist the marker first: if we crash after the drop, the next
+                // startup still knows the vectors must be rebuilt.
+                sqlx::query(
+                    "INSERT OR REPLACE INTO brain_meta(key, value) VALUES ('reindex_pending', '1')",
+                )
+                .execute(&self.pool)
+                .await?;
+                sqlx::query("DROP TABLE IF EXISTS fact_embeddings")
+                    .execute(&self.pool)
+                    .await?;
+                sqlx::query("DROP TABLE IF EXISTS entity_embeddings")
+                    .execute(&self.pool)
+                    .await?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     /// Initialize sqlite-vec extension and create virtual tables
@@ -80,60 +139,48 @@ impl VectorEngine {
 
     async fn create_tables(&self) -> Result<()> {
         let dim = self.config.dimension;
-        let m = self.config.hnsw_m;
-        let ef_construction = self.config.hnsw_ef_construction;
-
-        // Try to create virtual tables - will fail gracefully if vec0 not available
-        let result = async {
-            // Create virtual table for fact embeddings
+        for table in ["fact_embeddings", "entity_embeddings"] {
+            // A vec0 table created under the previous embedding default (384)
+            // keeps its original width because of CREATE VIRTUAL TABLE ... IF
+            // NOT EXISTS, so the stored vectors would never match the current
+            // 256-dim embeddings. Rebuild the table (and its HNSW index) when
+            // the stored width differs; legacy vectors are re-embedded by the
+            // normal write / reindex paths as new data is written.
+            if self.stale_vec0_table(&table, dim).await? {
+                sqlx::query(&format!("DROP TABLE IF NOT EXISTS {table}"))
+                    .execute(&self.pool)
+                    .await?;
+            }
             sqlx::query(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS fact_embeddings USING vec0(
-                    embedding FLOAT[{}]
-                )",
-                dim
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0(embedding FLOAT[{dim}])"
             ))
             .execute(&self.pool)
             .await?;
-
-            // Create virtual table for entity embeddings
-            sqlx::query(&format!(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS entity_embeddings USING vec0(
-                    embedding FLOAT[{}]
-                )",
-                dim
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            // Create HNSW index for fact embeddings
-            sqlx::query(&format!(
-                "CREATE INDEX IF NOT EXISTS fact_embeddings_hnsw ON fact_embeddings(
-                    embedding
-                ) USING hnsw(m={}, ef_construction={})",
-                m, ef_construction
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            // Create HNSW index for entity embeddings
-            sqlx::query(&format!(
-                "CREATE INDEX IF NOT EXISTS entity_embeddings_hnsw ON entity_embeddings(
-                    embedding
-                ) USING hnsw(m={}, ef_construction={})",
-                m, ef_construction
-            ))
-            .execute(&self.pool)
-            .await?;
-
-            Ok::<(), anyhow::Error>(())
-        }
-        .await;
-
-        if let Err(e) = result {
-            // Vec0 extension not available - vector search will be disabled
-            let _ = e;
         }
         Ok(())
+    }
+
+    /// Returns `true` when `{table}` already exists with a vec0 column width
+    /// that differs from `dim`. The stored CREATE VIRTUAL TABLE SQL is
+    /// consulted so a legacy 384-dimensional table is detected on upgrades.
+    async fn stale_vec0_table(&self, table: &str, dim: usize) -> Result<bool> {
+        let sql = sqlx::query_scalar::<_, String>(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .bind(table)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(sql) = sql else {
+            return Ok(false);
+        };
+        Ok(Self::vec0_dim(&sql)? != dim)
+    }
+
+    /// Extracts the column width from a stored vec0 CREATE statement, e.g.
+    /// "vec0(embedding FLOAT[384])" -> 384.
+    fn vec0_dim(sql: &str) -> Option<usize> {
+        let args = sql.split_once('(')?.1;
+        args.split("FLOAT[").nth(1)?.split(']').next()?.parse().ok()
     }
 
     /// Upsert a fact embedding
@@ -300,11 +347,20 @@ impl VectorEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::SqlitePool;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn test_vector_engine_rejects_wrong_embedding_dimensions() {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        // Same setup as Database::new: vec0 must be loaded on the connection.
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .extension(crate::db::vec0_path());
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
         let engine = VectorEngine::new(pool, VectorConfig::default())
             .await
             .unwrap();
