@@ -125,10 +125,10 @@ jobs:
           authors = ["dbillion"]
           language = "en"
           src = "src"
-          title = "koala-dock Documentation"
+          title = "koala-rust Documentation"
 
           [output.html]
-          git-repository-url = "https://github.com/dbillion/koala-dock"
+          git-repository-url = "https://github.com/dbillion/koala-rust"
           EOF
           cat << 'EOF' > docs/book/src/SUMMARY.md
           # Summary
@@ -144,23 +144,23 @@ jobs:
 
           ## Installation
           ```bash
-          cargo install --git https://github.com/dbillion/koala-dock
+          cargo install --git https://github.com/dbillion/koala-rust
           ```
 
           ## Starting the MCP Server
           ```bash
           export KOALA_STATE_DIR=~/.koala
-          koala-dock --serve
+          koala-rust --serve
           ```
 
           ## CLI Commands
           ```bash
           # Write and read facts
-          koala-dock fact-write "project_name" "Koala"
-          koala-dock fact-read "project_name"
+          koala-rust fact-write "project_name" "Koala"
+          koala-rust fact-read "project_name"
 
           # Health check
-          koala-dock health
+          koala-rust health
           ```
           EOF
           cat << 'EOF' > docs/book/src/architecture.md
@@ -187,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: https://dbillion.github.io/koala-dock/
+      url: https://dbillion.github.io/koala-rust/
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -216,7 +216,7 @@ jobs:
             cp -r deploy/architecture/* deploy/site/architecture/
           fi
           if [ ! -f deploy/site/index.html ]; then
-            printf '%s\n' '<!DOCTYPE html>' '<html>' '<head><meta charset="utf-8"><title>koala-dock Documentation</title></head>' '<body><h1>koala-dock Documentation</h1><ul><li><a href="api/">API Reference</a></li><li><a href="architecture/">Architecture Overview</a></li></ul></body></html>' > deploy/site/index.html
+            printf '%s\n' '<!DOCTYPE html>' '<html>' '<head><meta charset="utf-8"><title>koala-rust Documentation</title></head>' '<body><h1>koala-rust Documentation</h1><ul><li><a href="api/">API Reference</a></li><li><a href="architecture/">Architecture Overview</a></li></ul></body></html>' > deploy/site/index.html
           fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
