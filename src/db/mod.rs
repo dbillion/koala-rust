@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use sqlx::{sqlite::SqliteConnectOptions, Column, Row, SqlitePool};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 // ===== MODULE-LEVEL STRUCTS (not inside impl blocks) =====
@@ -64,8 +64,8 @@ pub fn vec0_path() -> String {
         .unwrap_or_else(|| {
             if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
                 let exe = std::env::current_exe()
-                    .unwrap_or_else(|_| "/usr/local/lib/vec0.so".to_string());
-                let dir = exe.parent().unwrap_or_else(|| "/usr/local/lib".into());
+                    .unwrap_or_else(|_| PathBuf::from("/usr/local/lib/vec0.so"));
+                let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("/usr/local/lib"));
                 let ext = if cfg!(target_os = "windows") {
                     "vec0.dll"
                 } else {

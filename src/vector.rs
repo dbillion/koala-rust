@@ -173,7 +173,7 @@ impl VectorEngine {
         let Some(sql) = sql else {
             return Ok(false);
         };
-        Ok(Self::vec0_dim(&sql)? != dim)
+        Ok(Self::vec0_dim(&sql).ok_or(anyhow::anyhow!("corrupt or missing vec0 table"))? != dim)
     }
 
     /// Extracts the column width from a stored vec0 CREATE statement, e.g.

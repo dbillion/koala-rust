@@ -34,6 +34,11 @@ impl Default for EmbeddingConfig {
 /// Embedding dimension for potion-base-8M
 pub const EMBEDDING_DIM: usize = 256;
 
+/// The configured embedding dimension (used by the vector engine config).
+pub fn configured_dim() -> usize {
+    EMBEDDING_DIM
+}
+
 /// Embedding manager with Model2Vec StaticModel and caching
 pub struct EmbeddingManager {
     config: EmbeddingConfig,
