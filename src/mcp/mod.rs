@@ -8,6 +8,11 @@ use tokio::sync::Mutex;
 
 use crate::{sync, Koala};
 
+/// Error for a missing or wrongly typed tool argument.
+fn missing_arg(key: &str) -> anyhow::Error {
+    anyhow::anyhow!("missing or invalid argument: {}", key)
+}
+
 pub struct KoalaServer {
     brain: Arc<Mutex<Koala>>,
 }
@@ -736,15 +741,15 @@ impl KoalaServer {
     // Core handlers
     async fn handle_write_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
-        let text = args["text"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
+        let text = args["text"].as_str().ok_or_else(|| missing_arg("text"))?;
         let rowid = brain.db.write_fact(name, text).await?;
         Ok(json!({"rowid": rowid, "name": name}))
     }
 
     async fn handle_read_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let fact = brain.db.read_fact(name).await?;
         Ok(fact
             .map(|(rowid, text)| json!({"rowid": rowid, "name": name, "body": text}))
@@ -759,7 +764,7 @@ impl KoalaServer {
 
     async fn handle_read_fact_versions(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10);
         let versions = brain.db.read_fact_versions(name, limit).await?;
         Ok(json!(versions))
@@ -767,21 +772,23 @@ impl KoalaServer {
 
     async fn handle_delete_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let deleted = brain.delete_fact_and_vector(name).await?;
         Ok(json!({"deleted": deleted}))
     }
 
     async fn handle_delete_fact_prefix(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let prefix = args["prefix"].as_str().unwrap();
+        let prefix = args["prefix"]
+            .as_str()
+            .ok_or_else(|| missing_arg("prefix"))?;
         let count = brain.delete_fact_prefix_and_vectors(prefix).await?;
         Ok(json!({"deleted": count}))
     }
 
     async fn handle_create_entities(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let type_ = args.get("type").and_then(|v| v.as_str());
         let project = args.get("project").and_then(|v| v.as_str());
         let observations = args
@@ -802,10 +809,10 @@ impl KoalaServer {
 
     async fn handle_add_observations(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let observations = args["observations"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("observations"))?
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect::<Vec<String>>();
@@ -817,7 +824,7 @@ impl KoalaServer {
         let brain = self.brain.lock().await;
         let names = args["names"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("names"))?
             .iter()
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect::<Vec<String>>();
@@ -827,7 +834,7 @@ impl KoalaServer {
 
     async fn handle_search_nodes(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let query = args["query"].as_str().unwrap();
+        let query = args["query"].as_str().ok_or_else(|| missing_arg("query"))?;
         let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(10);
         let results = brain.db.search_nodes(query, limit).await?;
         Ok(json!({"results": results}))
@@ -835,16 +842,16 @@ impl KoalaServer {
 
     async fn handle_create_relations(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let from = args["from"].as_str().unwrap();
-        let to = args["to"].as_str().unwrap();
-        let rel_type = args["type"].as_str().unwrap();
+        let from = args["from"].as_str().ok_or_else(|| missing_arg("from"))?;
+        let to = args["to"].as_str().ok_or_else(|| missing_arg("to"))?;
+        let rel_type = args["type"].as_str().ok_or_else(|| missing_arg("type"))?;
         let rowid = brain.db.create_relation(from, to, rel_type).await?;
         Ok(json!({"rowid": rowid, "from": from, "to": to, "type": rel_type}))
     }
 
     async fn handle_create_task(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let title = args["title"].as_str().unwrap();
+        let title = args["title"].as_str().ok_or_else(|| missing_arg("title"))?;
         let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
         let status = args
             .get("status")
@@ -874,7 +881,7 @@ impl KoalaServer {
 
     async fn handle_update_task(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let id = args["id"].as_i64().unwrap();
+        let id = args["id"].as_i64().ok_or_else(|| missing_arg("id"))?;
         let title = args.get("title").and_then(|v| v.as_str());
         let body = args.get("body").and_then(|v| v.as_str());
         let status = args.get("status").and_then(|v| v.as_str());
@@ -909,19 +916,19 @@ impl KoalaServer {
 
         let xs: Vec<f32> = args["xs"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("xs"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect::<Vec<f32>>();
         let ys: Vec<f32> = args["ys"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("ys"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect::<Vec<f32>>();
         let targets: Vec<f32> = args["targets"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("targets"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect::<Vec<f32>>();
@@ -945,13 +952,13 @@ impl KoalaServer {
 
         let xs: Vec<f32> = args["xs"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("xs"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect();
         let ys: Vec<f32> = args["ys"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("ys"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect();
@@ -990,16 +997,18 @@ impl KoalaServer {
 
     async fn handle_feedback(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
-        let signal = args["signal"].as_str().unwrap();
-        let kind = args["kind"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
+        let signal = args["signal"]
+            .as_str()
+            .ok_or_else(|| missing_arg("signal"))?;
+        let kind = args["kind"].as_str().ok_or_else(|| missing_arg("kind"))?;
         brain.db.feedback(name, signal, kind).await?;
         Ok(json!({"ok": true}))
     }
 
     async fn handle_explain_rank(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let rank = brain.db.explain_rank(name).await?;
         Ok(serde_json::to_value(rank)?)
     }
@@ -1012,16 +1021,22 @@ impl KoalaServer {
 
     async fn handle_sequential_thinking(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let step = args["step"].as_i64().unwrap();
-        let thought = args["thought"].as_str().unwrap();
-        let next_step = args["next_step"].as_i64().unwrap();
+        let step = args["step"].as_i64().ok_or_else(|| missing_arg("step"))?;
+        let thought = args["thought"]
+            .as_str()
+            .ok_or_else(|| missing_arg("thought"))?;
+        let next_step = args["next_step"]
+            .as_i64()
+            .ok_or_else(|| missing_arg("next_step"))?;
         let rowid: i64 = brain.db.add_thought(step, thought).await?;
         Ok(json!({"rowid": rowid, "step": step, "thought": thought, "next_step": next_step}))
     }
 
     async fn handle_conclusion(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let summary = args["summary"].as_str().unwrap();
+        let summary = args["summary"]
+            .as_str()
+            .ok_or_else(|| missing_arg("summary"))?;
         let rowid: i64 = brain.db.add_conclusion(summary).await?;
         Ok(json!({"rowid": rowid, "summary": summary}))
     }
@@ -1046,7 +1061,7 @@ impl KoalaServer {
         let model_ref = model
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no model loaded"))?;
-        let step = args["step"].as_i64().unwrap();
+        let step = args["step"].as_i64().ok_or_else(|| missing_arg("step"))?;
         let state = model_ref.to_state();
         let state_json = serde_json::to_string(&state)?;
         brain.db.save_model_full(step, &state_json).await?;
@@ -1055,7 +1070,7 @@ impl KoalaServer {
 
     async fn handle_model_load(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let step = args["step"].as_i64().unwrap();
+        let step = args["step"].as_i64().ok_or_else(|| missing_arg("step"))?;
         let state_json: Option<String> = brain.db.load_model_full(step).await?;
         if let Some(json_str) = state_json {
             let state: crate::model::ModelState = serde_json::from_str(&json_str)?;
@@ -1073,10 +1088,12 @@ impl KoalaServer {
     // v0.2: Vector Search handlers
     async fn handle_vector_upsert_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let fact_id = args["fact_id"].as_i64().unwrap();
+        let fact_id = args["fact_id"]
+            .as_i64()
+            .ok_or_else(|| missing_arg("fact_id"))?;
         let embedding: Vec<f32> = args["embedding"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("embedding"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect();
@@ -1086,10 +1103,12 @@ impl KoalaServer {
 
     async fn handle_vector_upsert_entity(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let entity_id = args["entity_id"].as_i64().unwrap();
+        let entity_id = args["entity_id"]
+            .as_i64()
+            .ok_or_else(|| missing_arg("entity_id"))?;
         let embedding: Vec<f32> = args["embedding"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("embedding"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect();
@@ -1101,11 +1120,11 @@ impl KoalaServer {
         let brain = self.brain.lock().await;
         let query_embedding: Vec<f32> = args["query_embedding"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("query_embedding"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect::<Vec<f32>>();
-        let k = args["k"].as_u64().unwrap() as usize;
+        let k = args["k"].as_u64().ok_or_else(|| missing_arg("k"))? as usize;
         let filter = args.get("filter").and_then(|v| v.as_str());
         let results = brain
             .vector_search_facts(&query_embedding, k, filter)
@@ -1117,25 +1136,29 @@ impl KoalaServer {
         let brain = self.brain.lock().await;
         let query_embedding: Vec<f32> = args["query_embedding"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("query_embedding"))?
             .iter()
             .filter_map(|v| v.as_f64().map(|x| x as f32))
             .collect::<Vec<f32>>();
-        let k = args["k"].as_u64().unwrap() as usize;
+        let k = args["k"].as_u64().ok_or_else(|| missing_arg("k"))? as usize;
         let results = brain.vector_search_entities(&query_embedding, k).await?;
         Ok(json!({"results": results}))
     }
 
     async fn handle_vector_delete_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let fact_id = args["fact_id"].as_i64().unwrap();
+        let fact_id = args["fact_id"]
+            .as_i64()
+            .ok_or_else(|| missing_arg("fact_id"))?;
         brain.vector_delete_fact(fact_id).await?;
         Ok(json!({"ok": true}))
     }
 
     async fn handle_vector_delete_entity(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let entity_id = args["entity_id"].as_i64().unwrap();
+        let entity_id = args["entity_id"]
+            .as_i64()
+            .ok_or_else(|| missing_arg("entity_id"))?;
         brain.vector_delete_entity(entity_id).await?;
         Ok(json!({"ok": true}))
     }
@@ -1143,15 +1166,15 @@ impl KoalaServer {
     // v0.3: Sync handlers
     async fn handle_sync_write_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
-        let text = args["text"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
+        let text = args["text"].as_str().ok_or_else(|| missing_arg("text"))?;
         let id = brain.sync_write_fact(name, text).await?;
         Ok(json!({"ok": true, "id": id}))
     }
 
     async fn handle_sync_read_fact(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let fact = brain.sync_read_fact(name).await?;
         Ok(fact
             .map(|(id, text)| json!({"id": id, "text": text}))
@@ -1166,7 +1189,7 @@ impl KoalaServer {
 
     async fn handle_sync_create_entity(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let type_ = args.get("type").and_then(|v| v.as_str());
         let project = args.get("project").and_then(|v| v.as_str());
         let observations = args
@@ -1186,7 +1209,9 @@ impl KoalaServer {
 
     async fn handle_sync_get_changes(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let doc_type_str = args["doc_type"].as_str().unwrap();
+        let doc_type_str = args["doc_type"]
+            .as_str()
+            .ok_or_else(|| missing_arg("doc_type"))?;
         let doc_type = match doc_type_str {
             "facts" => sync::SyncDocType::Facts,
             "entities" => sync::SyncDocType::Entities,
@@ -1203,7 +1228,9 @@ impl KoalaServer {
 
     async fn handle_sync_merge_changes(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let doc_type_str = args["doc_type"].as_str().unwrap();
+        let doc_type_str = args["doc_type"]
+            .as_str()
+            .ok_or_else(|| missing_arg("doc_type"))?;
         let doc_type = match doc_type_str {
             "facts" => sync::SyncDocType::Facts,
             "entities" => sync::SyncDocType::Entities,
@@ -1215,7 +1242,7 @@ impl KoalaServer {
         };
         let changes_b64: Vec<String> = args["changes"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("changes"))?
             .iter()
             .filter_map(|v| v.as_str())
             .map(|s| s.to_string())
@@ -1250,7 +1277,11 @@ impl KoalaServer {
             .get("keyword_weight")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.15) as f32;
-        let w = if w.is_finite() { w.clamp(0.0, 1.0) } else { 0.15 };
+        let w = if w.is_finite() {
+            w.clamp(0.0, 1.0)
+        } else {
+            0.15
+        };
         let hits = brain.recall(query, k, w).await?;
         Ok(json!({"results": hits}))
     }
@@ -1264,7 +1295,7 @@ impl KoalaServer {
     // v0.4: Embedding handlers
     async fn handle_embed_text(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let text = args["text"].as_str().unwrap();
+        let text = args["text"].as_str().ok_or_else(|| missing_arg("text"))?;
         let embedding = brain.embed_text(text).await?;
         Ok(json!({"embedding": embedding}))
     }
@@ -1273,7 +1304,7 @@ impl KoalaServer {
         let brain = self.brain.lock().await;
         let texts: Vec<&str> = args["texts"]
             .as_array()
-            .unwrap()
+            .ok_or_else(|| missing_arg("texts"))?
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
@@ -1284,17 +1315,19 @@ impl KoalaServer {
     // v0.5: Plugin handlers
     async fn handle_plugin_load(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         brain.load_plugin(name).await?;
         Ok(json!({"ok": true}))
     }
 
     async fn handle_plugin_call(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let plugin = args["plugin"].as_str().unwrap();
+        let plugin = args["plugin"]
+            .as_str()
+            .ok_or_else(|| missing_arg("plugin"))?;
         // Normalize: strip .wasm extension if present
         let plugin_name = plugin.strip_suffix(".wasm").unwrap_or(plugin);
-        let tool = args["tool"].as_str().unwrap();
+        let tool = args["tool"].as_str().ok_or_else(|| missing_arg("tool"))?;
         let tool_args = args["args"].clone();
         let result = brain.call_plugin_tool(plugin_name, tool, tool_args).await?;
         Ok(result)
@@ -1322,7 +1355,7 @@ impl KoalaServer {
 
     async fn handle_plugin_install(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         let version = args["version"].as_str();
         let path = brain.plugin_registry.install(name, version).await?;
         // Also load into plugin manager with registry JSON for builtin plugins
@@ -1338,13 +1371,13 @@ impl KoalaServer {
 
     async fn handle_plugin_uninstall(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let name = args["name"].as_str().unwrap();
+        let name = args["name"].as_str().ok_or_else(|| missing_arg("name"))?;
         brain.plugin_registry.uninstall(name).await?;
         // Also unload from plugin manager
         // Unload failure during uninstall is non-fatal; the registry entry is already gone.
         if let Err(e) = brain.plugin_manager.unload_plugin(name).await {
-                    tracing::warn!("Unload after uninstall failed: {}", e);
-                }
+            tracing::warn!("Unload after uninstall failed: {}", e);
+        }
         Ok(json!({"ok": true}))
     }
 

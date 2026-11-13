@@ -53,6 +53,31 @@ pub struct HealthInfo {
 
 // ===== DATABASE STRUCT =====
 
+/// Path of the sqlite-vec extension. Override with env KOALA_VEC0_PATH.
+/// On non-Linux platforms the extension is loaded from the directory of the
+/// running binary so the release ships `vec0.dll` / `vec0.dylib` next to it;
+/// Linux keeps the traditional system path.
+pub fn vec0_path() -> String {
+    std::env::var("KOALA_VEC0_PATH")
+        .ok()
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
+                let exe = std::env::current_exe()
+                    .unwrap_or_else(|_| "/usr/local/lib/vec0.so".to_string());
+                let dir = exe.parent().unwrap_or_else(|| "/usr/local/lib".into());
+                let ext = if cfg!(target_os = "windows") {
+                    "vec0.dll"
+                } else {
+                    "vec0.dylib"
+                };
+                dir.join(ext).to_string_lossy().to_string()
+            } else {
+                "/usr/local/lib/vec0.so".to_string()
+            }
+        })
+}
+
 #[derive(Clone)]
 pub struct Database {
     pub pool: SqlitePool,
@@ -74,8 +99,7 @@ impl Database {
 
         // Create pool with sqlite-vec extension loaded on every connection
         let db_url = format!("sqlite://{}?mode=rwc", abs_path.display());
-        let connect_opts =
-            SqliteConnectOptions::from_str(&db_url)?.extension("/usr/local/lib/vec0.so");
+        let connect_opts = SqliteConnectOptions::from_str(&db_url)?.extension(vec0_path());
         let pool = SqlitePool::connect_with(connect_opts).await?;
 
         let db = Self { pool };
