@@ -19,6 +19,33 @@ use sync::SyncManager;
 use tokio::sync::Mutex;
 use vector::{VectorConfig, VectorEngine};
 
+/// One result of `Koala::recall`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecallHit {
+    pub rowid: i64,
+    pub name: String,
+    pub text: String,
+    pub distance: f32,
+    pub keyword_overlap: f32,
+    pub score: f32,
+}
+
+fn embed_input(name: &str, text: &str) -> String {
+    format!("{}: {}", name.replace('_', " "), text)
+}
+
+fn tokens(s: &str) -> std::collections::HashSet<String> {
+    const STOP: &[&str] = &[
+        "the", "and", "for", "how", "what", "who", "does", "with", "that", "this", "are", "can",
+        "you", "your", "from", "get", "has", "have", "into", "about",
+    ];
+    s.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !STOP.contains(t))
+        .map(|t| t.to_string())
+        .collect()
+}
+
 #[derive(Clone)]
 pub struct Koala {
     pub db: Database,
@@ -73,7 +100,7 @@ impl Koala {
             tracing::warn!("Failed to discover plugins on startup: {}", e);
         }
 
-        Ok(Self {
+        let this = Self {
             db,
             model: Arc::new(Mutex::new(None)),
             vector_engine,
@@ -81,7 +108,172 @@ impl Koala {
             embedding_manager,
             plugin_manager,
             plugin_registry,
-        })
+        };
+
+        // Reindex when vector tables were rebuilt, the embedding model changed
+        // (even at the same dimension), or an earlier reindex never finished.
+        // A failure leaves the marker set: the server still starts, and the
+        // reindex is retried at the next startup or via the reindex_facts tool.
+        let model_id = embeddings::model_identity();
+        let stored = this.db.meta_get("embed_model").await?;
+        let pending = this.reindex_pending().await?;
+        if this.vector_engine.was_rebuilt()
+            || pending
+            || stored.as_deref().is_some_and(|m| m != model_id)
+        {
+            this.db.meta_set("reindex_pending", "1").await?;
+            match this.reindex_facts().await {
+                Ok(n) => tracing::info!("Re-embedded {} facts after model or dimension change", n),
+                Err(e) => tracing::warn!(
+                    "Reindex failed ({}). Search is degraded until it succeeds; it is retried at next startup or run the reindex_facts tool.",
+                    e
+                ),
+            }
+        } else if stored.is_none() {
+            this.db.meta_set("embed_model", &model_id).await?;
+        }
+
+        Ok(this)
+    }
+
+    /// Write a fact and embed it in one step. Replaces the vector of the
+    /// previous version of the same name. Returns the new rowid.
+    pub async fn remember_semantic(&self, name: &str, text: &str) -> Result<i64> {
+        // Embed first: if the model fails, no fact is written without a vector.
+        let emb = self.embed_text(&embed_input(name, text)).await?;
+        let old = self.db.current_fact_rowids(name).await?;
+        let rowid = self.db.write_fact(name, text).await?;
+        self.vector_upsert_fact(rowid, &emb).await?;
+        for r in old {
+            if r != rowid {
+                self.vector_delete_fact(r).await?;
+            }
+        }
+        Ok(rowid)
+    }
+
+    /// Delete the current version of a fact and its vector. The fact delete is
+    /// authoritative; a vector cleanup failure only leaves an orphan that
+    /// `recall` skips, so it is logged, not returned.
+    pub async fn delete_fact_and_vector(&self, name: &str) -> Result<bool> {
+        let rowids = self.db.current_fact_rowids(name).await?;
+        let deleted = self.db.delete_fact(name).await?;
+        self.drop_vectors(&rowids).await;
+        Ok(deleted)
+    }
+
+    /// Prefix variant of `delete_fact_and_vector`. Returns the number of facts deleted.
+    pub async fn delete_fact_prefix_and_vectors(&self, prefix: &str) -> Result<i64> {
+        let rowids = self.db.current_fact_rowids_prefix(prefix).await?;
+        let count = self.db.delete_fact_prefix(prefix).await?;
+        self.drop_vectors(&rowids).await;
+        Ok(count)
+    }
+
+    async fn drop_vectors(&self, rowids: &[i64]) {
+        for r in rowids {
+            if let Err(e) = self.vector_delete_fact(*r).await {
+                tracing::warn!("Orphan vector for deleted fact {} not removed: {}", r, e);
+            }
+        }
+    }
+
+    /// True while a model or dimension change still needs its vectors rebuilt.
+    pub async fn reindex_pending(&self) -> Result<bool> {
+        Ok(self.db.meta_get("reindex_pending").await?.as_deref() == Some("1"))
+    }
+
+    /// Embed every current fact, in batches. When a model or dimension change
+    /// is pending, entity vectors are re-derived from their stored text too,
+    /// and the pending marker is cleared only after both succeed.
+    pub async fn reindex_facts(&self) -> Result<usize> {
+        let facts = self.db.current_facts().await?;
+        for chunk in facts.chunks(256) {
+            let inputs: Vec<String> = chunk.iter().map(|(_, n, t)| embed_input(n, t)).collect();
+            let refs: Vec<&str> = inputs.iter().map(|s| s.as_str()).collect();
+            let embs = self.embed_batch(&refs).await?;
+            for ((rowid, _, _), emb) in chunk.iter().zip(embs.iter()) {
+                self.vector_upsert_fact(*rowid, emb).await?;
+            }
+        }
+        if self.reindex_pending().await? {
+            self.reindex_entities().await?;
+            self.db
+                .meta_set("embed_model", &embeddings::model_identity())
+                .await?;
+            self.db.meta_set("reindex_pending", "0").await?;
+        }
+        Ok(facts.len())
+    }
+
+    async fn reindex_entities(&self) -> Result<usize> {
+        let ents = self.db.entity_texts().await?;
+        for chunk in ents.chunks(256) {
+            let inputs: Vec<&str> = chunk.iter().map(|(_, t)| t.as_str()).collect();
+            let embs = self.embed_batch(&inputs).await?;
+            for ((rowid, _), emb) in chunk.iter().zip(embs.iter()) {
+                self.vector_upsert_entity(*rowid, emb).await?;
+            }
+        }
+        Ok(ents.len())
+    }
+
+    /// Hybrid search: vector distance, nudged by keyword overlap so exact
+    /// names and ids that embeddings miss still rank. Lower score is better.
+    pub async fn recall(
+        &self,
+        query: &str,
+        k: usize,
+        keyword_weight: f32,
+    ) -> Result<Vec<RecallHit>> {
+        let qe = self.embed_text(query).await?;
+        let pool = k.saturating_mul(4).clamp(20, 1000);
+        let cands = self.vector_search_facts(&qe, pool, None).await?;
+        let qtokens = tokens(query);
+
+        // Independent keyword path: exact names outside the vector pool still
+        // get in. They carry the worst vector distance, so only the keyword
+        // overlap can lift them above real vector hits.
+        let qvec: Vec<String> = qtokens.iter().cloned().collect();
+        let kw_ids = self.db.keyword_fact_candidates(&qvec, pool as i64).await?;
+        let worst = cands
+            .iter()
+            .map(|c| c.score)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let fallback = if worst.is_finite() { worst } else { 1.5 };
+        let mut pairs: Vec<(i64, f32)> = cands.iter().map(|c| (c.id, c.score)).collect();
+        for id in kw_ids {
+            if !pairs.iter().any(|(i, _)| *i == id) {
+                pairs.push((id, fallback));
+            }
+        }
+
+        let mut hits = Vec::new();
+        for (id, dist) in pairs {
+            let Some((name, text, current)) = self.db.read_fact_by_rowid(id).await? else {
+                continue;
+            };
+            if !current {
+                continue;
+            }
+            let hay = tokens(&format!("{} {}", name.replace('_', " "), text));
+            let overlap = if qtokens.is_empty() {
+                0.0
+            } else {
+                qtokens.iter().filter(|t| hay.contains(*t)).count() as f32 / qtokens.len() as f32
+            };
+            hits.push(RecallHit {
+                rowid: id,
+                name,
+                text,
+                distance: dist,
+                keyword_overlap: overlap,
+                score: dist - keyword_weight * overlap,
+            });
+        }
+        hits.sort_by(|a, b| a.score.total_cmp(&b.score));
+        hits.truncate(k);
+        Ok(hits)
     }
 
     pub async fn init_model(&mut self, hidden: usize, lr: f32, activation: &str) -> Result<()> {

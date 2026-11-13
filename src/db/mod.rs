@@ -65,7 +65,7 @@ pub fn vec0_path() -> String {
             if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
                 let exe = std::env::current_exe()
                     .unwrap_or_else(|_| PathBuf::from("/usr/local/lib/vec0.so"));
-                let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("/usr/local/lib"));
+                let dir = exe.parent().unwrap_or_else(|| Path::new("/usr/local/lib"));
                 let ext = if cfg!(target_os = "windows") {
                     "vec0.dll"
                 } else {
@@ -73,7 +73,7 @@ pub fn vec0_path() -> String {
                 };
                 dir.join(ext).to_string_lossy().to_string()
             } else {
-                "/usr/local/lib/vec0.so".to_string()
+                PathBuf::from("/usr/local/lib/vec0.so").to_string_lossy().to_string()
             }
         })
 }

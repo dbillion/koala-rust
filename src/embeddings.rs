@@ -23,7 +23,7 @@ impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
             // Primary recommended model from Model2Vec maintainers
-            model_name: "minishlab/potion-base-8M".to_string(),
+            model_name: configured_model(),
             max_length: 512,
             batch_size: 1024,
             normalize: true,
@@ -34,9 +34,29 @@ impl Default for EmbeddingConfig {
 /// Embedding dimension for potion-base-8M
 pub const EMBEDDING_DIM: usize = 256;
 
-/// The configured embedding dimension (used by the vector engine config).
+/// Embedding model name. Override with env KOALA_EMBED_MODEL
+/// (any Model2Vec model, e.g. minishlab/potion-base-32M).
+pub fn configured_model() -> String {
+    std::env::var("KOALA_EMBED_MODEL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "minishlab/potion-base-8M".to_string())
+}
+
+/// Embedding dimension. Override with env KOALA_EMBED_DIM when you
+/// change the model (potion-base-8M = 256, potion-base-32M = 512).
 pub fn configured_dim() -> usize {
-    EMBEDDING_DIM
+    std::env::var("KOALA_EMBED_DIM")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|d| *d > 0)
+        .unwrap_or(EMBEDDING_DIM)
+}
+
+/// Identity of the active embedding setup. Stored in the DB so a model
+/// change is noticed even when the dimension stays the same.
+pub fn model_identity() -> String {
+    format!("{}|{}", configured_model(), configured_dim())
 }
 
 /// Embedding manager with Model2Vec StaticModel and caching
@@ -66,10 +86,19 @@ impl EmbeddingManager {
                 None, // normalize_embeddings
                 None, // subfolder_in_repo
             )?;
-            info!(
-                "Model2Vec model loaded successfully (dim={})",
-                EMBEDDING_DIM
-            );
+            let probe = model.encode(&["dimension probe".to_string()]);
+            let actual = probe.first().map(|v| v.len()).unwrap_or(0);
+            let want = configured_dim();
+            if actual != want {
+                anyhow::bail!(
+                    "Model {} outputs {} dims but KOALA_EMBED_DIM is {}. Set KOALA_EMBED_DIM={}",
+                    self.config.model_name,
+                    actual,
+                    want,
+                    actual
+                );
+            }
+            info!("Model2Vec model loaded successfully (dim={})", want);
             *model_guard = Some(model);
         }
         Ok(())
@@ -123,9 +152,10 @@ impl EmbeddingManager {
             let embeddings = model.encode(&uncached_texts);
 
             // Fill in results and cache
-            for (idx, embedding) in uncached_indices.into_iter().zip(embeddings) {
+            for ((pos, idx), embedding) in uncached_indices.into_iter().enumerate().zip(embeddings)
+            {
                 self.cache
-                    .insert(uncached_texts[idx].clone(), embedding.clone());
+                    .insert(uncached_texts[pos].clone(), embedding.clone());
                 results[idx] = embedding;
             }
         }
@@ -167,7 +197,8 @@ impl EmbeddingManager {
         self.init().await?;
         Ok(format!(
             "Model2Vec: {} (dim={})",
-            self.config.model_name, EMBEDDING_DIM
+            self.config.model_name,
+            configured_dim()
         ))
     }
 }
