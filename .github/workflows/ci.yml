@@ -48,7 +48,7 @@ jobs:
       - name: Verify binary
         run: |
           cargo build --release
-          ./target/release/koala-dock --help
+          ./target/release/koala-rust --help
 
   cross-check:
     name: Cross-platform Check (${{ matrix.target }})
