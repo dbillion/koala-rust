@@ -140,6 +140,17 @@ impl VectorEngine {
     async fn create_tables(&self) -> Result<()> {
         let dim = self.config.dimension;
         for table in ["fact_embeddings", "entity_embeddings"] {
+            // A vec0 table created under the previous embedding default (384)
+            // keeps its original width because of CREATE VIRTUAL TABLE ... IF
+            // NOT EXISTS, so the stored vectors would never match the current
+            // 256-dim embeddings. Rebuild the table (and its HNSW index) when
+            // the stored width differs; legacy vectors are re-embedded by the
+            // normal write / reindex paths as new data is written.
+            if self.stale_vec0_table(&table, dim).await? {
+                sqlx::query(&format!("DROP TABLE IF NOT EXISTS {table}"))
+                    .execute(&self.pool)
+                    .await?;
+            }
             sqlx::query(&format!(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0(embedding FLOAT[{dim}])"
             ))
@@ -147,6 +158,29 @@ impl VectorEngine {
             .await?;
         }
         Ok(())
+    }
+
+    /// Returns `true` when `{table}` already exists with a vec0 column width
+    /// that differs from `dim`. The stored CREATE VIRTUAL TABLE SQL is
+    /// consulted so a legacy 384-dimensional table is detected on upgrades.
+    async fn stale_vec0_table(&self, table: &str, dim: usize) -> Result<bool> {
+        let sql = sqlx::query_scalar::<_, String>(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .bind(table)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(sql) = sql else {
+            return Ok(false);
+        };
+        Ok(Self::vec0_dim(&sql)? != dim)
+    }
+
+    /// Extracts the column width from a stored vec0 CREATE statement, e.g.
+    /// "vec0(embedding FLOAT[384])" -> 384.
+    fn vec0_dim(sql: &str) -> Option<usize> {
+        let args = sql.split_once('(')?.1;
+        args.split("FLOAT[").nth(1)?.split(']').next()?.parse().ok()
     }
 
     /// Upsert a fact embedding
@@ -321,7 +355,7 @@ mod tests {
         // Same setup as Database::new: vec0 must be loaded on the connection.
         let opts = SqliteConnectOptions::from_str("sqlite::memory:")
             .unwrap()
-            .extension("/usr/local/lib/vec0.so");
+            .extension(crate::db::vec0_path());
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(opts)

@@ -152,7 +152,8 @@ impl EmbeddingManager {
             let embeddings = model.encode(&uncached_texts);
 
             // Fill in results and cache
-            for ((pos, idx), embedding) in uncached_indices.into_iter().enumerate().zip(embeddings) {
+            for ((pos, idx), embedding) in uncached_indices.into_iter().enumerate().zip(embeddings)
+            {
                 self.cache
                     .insert(uncached_texts[pos].clone(), embedding.clone());
                 results[idx] = embedding;

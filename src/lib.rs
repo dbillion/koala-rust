@@ -236,7 +236,10 @@ impl PeaBrain {
         // overlap can lift them above real vector hits.
         let qvec: Vec<String> = qtokens.iter().cloned().collect();
         let kw_ids = self.db.keyword_fact_candidates(&qvec, pool as i64).await?;
-        let worst = cands.iter().map(|c| c.score).fold(f32::NEG_INFINITY, f32::max);
+        let worst = cands
+            .iter()
+            .map(|c| c.score)
+            .fold(f32::NEG_INFINITY, f32::max);
         let fallback = if worst.is_finite() { worst } else { 1.5 };
         let mut pairs: Vec<(i64, f32)> = cands.iter().map(|c| (c.id, c.score)).collect();
         for id in kw_ids {
