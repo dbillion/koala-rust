@@ -653,6 +653,84 @@ impl KoalaServer {
                 },
                 None,
             ),
+
+            // AI Continuity & Context Lifecycle tools
+            tool(
+                "get_user_context",
+                "Retrieve current user working profile, preferences, and user facts",
+                Map::new(),
+                None,
+            ),
+            tool(
+                "get_project_context",
+                "Retrieve project architecture, decisions, latest handoff, and open tasks",
+                {
+                    let mut p = Map::new();
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["project"]),
+            ),
+            tool(
+                "bootstrap_context",
+                "Full session bootstrap combining user profile and project context",
+                {
+                    let mut p = Map::new();
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["project"]),
+            ),
+            tool(
+                "record_decision",
+                "Record an architectural or technical decision for a project",
+                {
+                    let mut p = Map::new();
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("decision".to_string(), json!({"type": "string"}));
+                    p.insert("rationale".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["project", "decision"]),
+            ),
+            tool(
+                "update_project_status",
+                "Update project status, blockers, and next step",
+                {
+                    let mut p = Map::new();
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("status".to_string(), json!({"type": "string"}));
+                    p.insert("blockers".to_string(), json!({"type": "array", "items": {"type": "string"}}));
+                    p.insert("next_step".to_string(), json!({"type": "string"}));
+                    p
+                },
+                Some(vec!["project", "status"]),
+            ),
+            tool(
+                "create_handoff",
+                "Create and persist an immutable handoff checkpoint when concluding or switching",
+                {
+                    let mut p = Map::new();
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("summary".to_string(), json!({"type": "string"}));
+                    p.insert("next_step".to_string(), json!({"type": "string"}));
+                    p.insert("blockers".to_string(), json!({"type": "array", "items": {"type": "string"}}));
+                    p
+                },
+                Some(vec!["project", "summary", "next_step"]),
+            ),
+            tool(
+                "search_memory",
+                "Search memory across facts and handoffs with optional project filter",
+                {
+                    let mut p = Map::new();
+                    p.insert("query".to_string(), json!({"type": "string"}));
+                    p.insert("project".to_string(), json!({"type": "string"}));
+                    p.insert("limit".to_string(), json!({"type": "integer"}));
+                    p
+                },
+                Some(vec!["query"]),
+            ),
         ];
         Ok(json!({"tools": tools}))
     }
@@ -726,6 +804,15 @@ impl KoalaServer {
             "plugin_uninstall" => self.handle_plugin_uninstall(args).await,
             "plugin_registry_stats" => self.handle_plugin_registry_stats().await,
             "plugin_update_registry" => self.handle_plugin_update_registry(args).await,
+
+            // AI Continuity & Context Lifecycle
+            "get_user_context" => self.handle_get_user_context().await,
+            "get_project_context" => self.handle_get_project_context(args).await,
+            "bootstrap_context" => self.handle_bootstrap_context(args).await,
+            "record_decision" => self.handle_record_decision(args).await,
+            "update_project_status" => self.handle_update_project_status(args).await,
+            "create_handoff" => self.handle_create_handoff(args).await,
+            "search_memory" => self.handle_search_memory(args).await,
 
             _ => return Err(anyhow::anyhow!("Unknown tool: {}", name)),
         }?;
@@ -1392,6 +1479,79 @@ impl KoalaServer {
         let url = args.get("url").and_then(|v| v.as_str());
         let count = brain.plugin_registry.update_registry(url).await?;
         Ok(json!({"updated": count}))
+    }
+
+    // Continuity handlers
+    async fn handle_get_user_context(&self) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let ctx = brain.get_user_context().await?;
+        Ok(serde_json::to_value(ctx)?)
+    }
+
+    async fn handle_get_project_context(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let ctx = brain.get_project_context(project).await?;
+        Ok(serde_json::to_value(ctx)?)
+    }
+
+    async fn handle_bootstrap_context(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let ctx = brain.bootstrap_context(project).await?;
+        Ok(serde_json::to_value(ctx)?)
+    }
+
+    async fn handle_record_decision(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let decision = args["decision"].as_str().ok_or_else(|| missing_arg("decision"))?;
+        let rationale = args["rationale"].as_str();
+        let res = brain.record_decision(project, decision, rationale).await?;
+        Ok(res)
+    }
+
+    async fn handle_update_project_status(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let status = args["status"].as_str().ok_or_else(|| missing_arg("status"))?;
+        let blockers: Vec<String> = args["blockers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let next_step = args["next_step"].as_str();
+        let res = brain.update_project_status(project, status, &blockers, next_step).await?;
+        Ok(res)
+    }
+
+    async fn handle_create_handoff(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let summary = args["summary"].as_str().ok_or_else(|| missing_arg("summary"))?;
+        let next_step = args["next_step"].as_str().ok_or_else(|| missing_arg("next_step"))?;
+        let blockers: Vec<String> = args["blockers"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let cp = brain.create_handoff(project, summary, next_step, &blockers).await?;
+        Ok(serde_json::to_value(cp)?)
+    }
+
+    async fn handle_search_memory(&self, args: Value) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let query = args["query"].as_str().ok_or_else(|| missing_arg("query"))?;
+        let project = args["project"].as_str();
+        let limit = args["limit"].as_u64().map(|v| v as usize);
+        let results = brain.search_memory(query, project, limit).await?;
+        Ok(serde_json::to_value(results)?)
     }
 }
 

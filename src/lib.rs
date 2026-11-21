@@ -1,3 +1,4 @@
+pub mod continuity;
 pub mod db;
 pub mod embeddings;
 pub mod mcp;

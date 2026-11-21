@@ -196,6 +196,44 @@ def main():
     sql_rows = json.loads(out)
     check("sql CLI decodes primitives", sql_rows == [{"flt": 2.5, "num": 1, "txt": "test"}])
 
+    # ---- AI continuity & context lifecycle test
+    c_server = start("continuity")
+    c_server["call"]("write_fact", {"name": "user_stack", "text": "Rust + TypeScript + MCP"})
+    c_server["call"]("record_decision", {
+        "project": "harvestconnect",
+        "decision": "Use koala-rust for persistent memory",
+        "rationale": "High-performance Rust SQLite + CRDT sync"
+    })
+    c_server["call"]("create_handoff", {
+        "project": "harvestconnect",
+        "summary": "Completed initial continuity implementation",
+        "next_step": "Deploy and test CLI",
+        "blockers": ["none"]
+    })
+    boot = c_server["call"]("bootstrap_context", {"project": "harvestconnect"})
+    check("bootstrap has user stack", "Rust + TypeScript + MCP" in boot["user"]["stack"])
+    check("bootstrap has latest handoff", boot["project"]["latest_handoff"]["summary"] == "Completed initial continuity implementation")
+    check("bootstrap has recent decision", any("koala-rust" in str(d) for d in boot["project"]["recent_decisions"]))
+    mem_res = c_server["call"]("search_memory", {"query": "initial continuity", "project": "harvestconnect"})
+    check("search_memory returns relevant handoff", len(mem_res) > 0 and "harvestconnect" in mem_res[0]["name"])
+    stop(c_server)
+
+    # CLI context commands
+    c_dir = os.path.join(TMP, "continuity")
+    cp_out = subprocess.check_output([BIN, "--state-dir", c_dir, "context", "checkpoint",
+                                      "--project", "harvestconnect",
+                                      "--summary", "CLI checkpoint test",
+                                      "--next", "Verify bootstrap",
+                                      "-f", "json"], text=True)
+    cp_data = json.loads(cp_out)
+    check("cli context checkpoint", cp_data["summary"] == "CLI checkpoint test")
+
+    boot_out = subprocess.check_output([BIN, "--state-dir", c_dir, "context", "bootstrap",
+                                        "--project", "harvestconnect", "-f", "json"], text=True)
+    boot_data = json.loads(boot_out)
+    check("cli context bootstrap returns checkpoint",
+          boot_data["project"]["latest_handoff"]["summary"] == "CLI checkpoint test")
+
 
 if __name__ == "__main__":
     try:

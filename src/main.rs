@@ -434,6 +434,74 @@ enum Command {
         /// Query
         query: String,
     },
+
+    // === Context & Continuity ===
+    /// AI Continuity and context lifecycle commands
+    Context {
+        #[command(subcommand)]
+        action: ContextAction,
+    },
+}
+
+/// Context lifecycle actions
+#[derive(Subcommand, Debug)]
+enum ContextAction {
+    /// Retrieve full bootstrap context (user profile + project architecture, decisions, handoff)
+    Bootstrap {
+        /// Project name
+        #[arg(long, short)]
+        project: String,
+    },
+    /// Save a handoff checkpoint when work pauses or concludes
+    Checkpoint {
+        /// Project name
+        #[arg(long, short)]
+        project: String,
+        /// Handoff summary of what was accomplished
+        #[arg(long, short)]
+        summary: String,
+        /// Next steps for the incoming agent/session
+        #[arg(long, short)]
+        next: String,
+        /// Comma-separated list of blockers (optional)
+        #[arg(long, short)]
+        blockers: Option<String>,
+    },
+    /// Record an architectural or technical decision
+    Decision {
+        /// Project name
+        #[arg(long, short)]
+        project: String,
+        /// The decision that was made
+        #[arg(long, short)]
+        decision: String,
+        /// Rationale behind the decision (optional)
+        #[arg(long, short)]
+        rationale: Option<String>,
+    },
+    /// Update the current project status and blockers
+    Status {
+        /// Project name
+        #[arg(long, short)]
+        project: String,
+        /// Current status summary
+        #[arg(long, short)]
+        status: String,
+        /// Comma-separated list of blockers (optional)
+        #[arg(long, short)]
+        blockers: Option<String>,
+        /// Next immediate step (optional)
+        #[arg(long, short)]
+        next: Option<String>,
+    },
+    /// Get current user working profile and preferences
+    GetUser,
+    /// Get project context
+    GetProject {
+        /// Project name
+        #[arg(long, short)]
+        project: String,
+    },
 }
 
 #[tokio::main]
@@ -775,6 +843,75 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
             let rows = brain.db.raw_sql(&query).await?;
             print_output(format, serde_json::json!(rows));
         }
+
+        // Context & Continuity
+        Command::Context { action } => match action {
+            ContextAction::Bootstrap { project } => {
+                let ctx = brain.bootstrap_context(&project).await?;
+                print_output(format, serde_json::to_value(&ctx)?);
+            }
+            ContextAction::Checkpoint {
+                project,
+                summary,
+                next,
+                blockers,
+            } => {
+                let blocker_list: Vec<String> = blockers
+                    .map(|b| {
+                        b.split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let cp = brain
+                    .create_handoff(&project, &summary, &next, &blocker_list)
+                    .await?;
+                print_output(format, serde_json::to_value(&cp)?);
+            }
+            ContextAction::Decision {
+                project,
+                decision,
+                rationale,
+            } => {
+                let res = brain
+                    .record_decision(&project, &decision, rationale.as_deref())
+                    .await?;
+                print_output(format, res);
+            }
+            ContextAction::Status {
+                project,
+                status,
+                blockers,
+                next,
+            } => {
+                let blocker_list: Vec<String> = blockers
+                    .map(|b| {
+                        b.split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let res = brain
+                    .update_project_status(
+                        &project,
+                        &status,
+                        &blocker_list,
+                        next.as_deref(),
+                    )
+                    .await?;
+                print_output(format, res);
+            }
+            ContextAction::GetUser => {
+                let user_ctx = brain.get_user_context().await?;
+                print_output(format, serde_json::to_value(&user_ctx)?);
+            }
+            ContextAction::GetProject { project } => {
+                let proj_ctx = brain.get_project_context(&project).await?;
+                print_output(format, serde_json::to_value(&proj_ctx)?);
+            }
+        },
     }
 
     Ok(())
