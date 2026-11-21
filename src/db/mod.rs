@@ -667,7 +667,7 @@ impl Database {
                 )
                 SELECT DISTINCT name, depth FROM reachable
             ";
-            let rows = sqlx::query(&sql)
+            let rows = sqlx::query(sql)
                 .bind(seed)
                 .bind(max_depth)
                 .bind(max_depth)
@@ -1015,7 +1015,7 @@ impl Database {
                             "REAL" | "FLOAT" => row
                                 .try_get::<f64, _>(i)
                                 .ok()
-                                .and_then(|v| serde_json::Number::from_f64(v))
+                                .and_then(serde_json::Number::from_f64)
                                 .map(serde_json::Value::Number)
                                 .unwrap_or(serde_json::Value::Null),
                             "BOOLEAN" => row
