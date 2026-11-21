@@ -146,7 +146,7 @@ impl VectorEngine {
             // 256-dim embeddings. Rebuild the table (and its HNSW index) when
             // the stored width differs; legacy vectors are re-embedded by the
             // normal write / reindex paths as new data is written.
-            if self.stale_vec0_table(&table, dim).await? {
+            if self.stale_vec0_table(table, dim).await? {
                 sqlx::query(&format!("DROP TABLE IF NOT EXISTS {table}"))
                     .execute(&self.pool)
                     .await?;

@@ -73,7 +73,9 @@ pub fn vec0_path() -> String {
                 };
                 dir.join(ext).to_string_lossy().to_string()
             } else {
-                PathBuf::from("/usr/local/lib/vec0.so").to_string_lossy().to_string()
+                PathBuf::from("/usr/local/lib/vec0.so")
+                    .to_string_lossy()
+                    .to_string()
             }
         })
 }
@@ -631,16 +633,16 @@ impl Database {
         Ok(results)
     }
 
-        /// Traverse the relations graph bidirectionally (multi-hop) from seed names.
+    /// Traverse the relations graph bidirectionally (multi-hop) from seed names.
     ///
     /// SQLite `WITH RECURSIVE` CTE; no graph extension needed.
-        pub async fn create_relation(&self, from: &str, to: &str, rel_type: &str) -> Result<i64> {
+    pub async fn create_relation(&self, from: &str, to: &str, rel_type: &str) -> Result<i64> {
         let row = sqlx::query("INSERT INTO relations (from_entity, to_entity, rel_type) VALUES (?, ?, ?) RETURNING rowid")
             .bind(from).bind(to).bind(rel_type).fetch_one(&self.pool).await?;
         Ok(row.get("rowid"))
     }
 
-            pub async fn traverse_relations(
+    pub async fn traverse_relations(
         &self,
         seeds: &[String],
         max_depth: i32,
@@ -665,7 +667,7 @@ impl Database {
                 )
                 SELECT DISTINCT name, depth FROM reachable
             ";
-            let rows = sqlx::query(&sql)
+            let rows = sqlx::query(sql)
                 .bind(seed)
                 .bind(max_depth)
                 .bind(max_depth)
@@ -683,7 +685,7 @@ impl Database {
         Ok(results)
     }
 
-pub async fn search_nodes(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+    pub async fn search_nodes(&self, query: &str, limit: i64) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT DISTINCT name FROM (
                 SELECT name FROM entities WHERE name LIKE ?
@@ -1006,13 +1008,30 @@ pub async fn search_nodes(&self, query: &str, limit: i64) -> Result<Vec<String>>
                         serde_json::Value::Null
                     } else {
                         match raw.type_info().name() {
-                            "INTEGER" => row.try_get::<i64, _>(i).map(|v| serde_json::Value::Number(v.into())).unwrap_or(serde_json::Value::Null),
-                            "REAL" | "FLOAT" => row.try_get::<f64, _>(i).ok().and_then(|v| serde_json::Number::from_f64(v)).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null),
-                            "BOOLEAN" => row.try_get::<bool, _>(i).map(serde_json::Value::Bool).unwrap_or(serde_json::Value::Null),
-                            "TEXT" => row.try_get::<String, _>(i).map(serde_json::Value::String).unwrap_or(serde_json::Value::Null),
+                            "INTEGER" => row
+                                .try_get::<i64, _>(i)
+                                .map(|v| serde_json::Value::Number(v.into()))
+                                .unwrap_or(serde_json::Value::Null),
+                            "REAL" | "FLOAT" => row
+                                .try_get::<f64, _>(i)
+                                .ok()
+                                .and_then(serde_json::Number::from_f64)
+                                .map(serde_json::Value::Number)
+                                .unwrap_or(serde_json::Value::Null),
+                            "BOOLEAN" => row
+                                .try_get::<bool, _>(i)
+                                .map(serde_json::Value::Bool)
+                                .unwrap_or(serde_json::Value::Null),
+                            "TEXT" => row
+                                .try_get::<String, _>(i)
+                                .map(serde_json::Value::String)
+                                .unwrap_or(serde_json::Value::Null),
                             "BLOB" => {
                                 if let Ok(bytes) = row.try_get::<Vec<u8>, _>(i) {
-                                    serde_json::Value::String(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes))
+                                    serde_json::Value::String(base64::Engine::encode(
+                                        &base64::engine::general_purpose::STANDARD,
+                                        &bytes,
+                                    ))
                                 } else {
                                     serde_json::Value::Null
                                 }
@@ -1023,7 +1042,9 @@ pub async fn search_nodes(&self, query: &str, limit: i64) -> Result<Vec<String>>
                                 } else if let Ok(n) = row.try_get::<i64, _>(i) {
                                     serde_json::Value::Number(n.into())
                                 } else if let Ok(f) = row.try_get::<f64, _>(i) {
-                                    serde_json::Number::from_f64(f).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null)
+                                    serde_json::Number::from_f64(f)
+                                        .map(serde_json::Value::Number)
+                                        .unwrap_or(serde_json::Value::Null)
                                 } else {
                                     serde_json::Value::Null
                                 }

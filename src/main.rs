@@ -61,11 +61,7 @@ enum OutputFormat {
 
 /// Main CLI arguments
 #[derive(Parser, Debug)]
-#[command(
-    name = "koala-rust",
-    version,
-    about = "Koala MCP Server & CLI in Rust"
-)]
+#[command(name = "koala-rust", version, about = "Koala MCP Server & CLI in Rust")]
 struct Args {
     /// State directory (default: $HOME/.koala)
     #[arg(long, env = "KOALA_STATE_DIR", global = true)]
@@ -894,12 +890,7 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
                     })
                     .unwrap_or_default();
                 let res = brain
-                    .update_project_status(
-                        &project,
-                        &status,
-                        &blocker_list,
-                        next.as_deref(),
-                    )
+                    .update_project_status(&project, &status, &blocker_list, next.as_deref())
                     .await?;
                 print_output(format, res);
             }
