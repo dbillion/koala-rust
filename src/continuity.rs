@@ -1,8 +1,8 @@
+use crate::Koala;
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use crate::Koala;
 
 /// User profile and working preferences
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +88,8 @@ impl Koala {
         // Architecture
         let architecture = if let Ok(Some((_, text))) = self.db.read_fact(&arch_key).await {
             Some(text)
-        } else if let Ok(Some((_, text))) = self.db.read_fact(&format!("project:{}", project)).await {
+        } else if let Ok(Some((_, text))) = self.db.read_fact(&format!("project:{}", project)).await
+        {
             Some(text)
         } else {
             None
@@ -96,14 +97,18 @@ impl Koala {
 
         // Status
         let status = if let Ok(Some((_, text))) = self.db.read_fact(&status_key).await {
-            serde_json::from_str::<Value>(&text).ok().or_else(|| Some(json!({"status": text})))
+            serde_json::from_str::<Value>(&text)
+                .ok()
+                .or_else(|| Some(json!({"status": text})))
         } else {
             None
         };
 
         // Latest handoff
         let latest_handoff = if let Ok(Some((_, text))) = self.db.read_fact(&handoff_key).await {
-            serde_json::from_str::<Value>(&text).ok().or_else(|| Some(json!({"summary": text})))
+            serde_json::from_str::<Value>(&text)
+                .ok()
+                .or_else(|| Some(json!({"summary": text})))
         } else {
             None
         };
@@ -181,7 +186,10 @@ impl Koala {
         self.remember_semantic(&fact_name, &payload_str).await?;
 
         // Also add observation to project entity
-        let _ = self.db.create_entity(project, Some("project"), Some(project), &[]).await;
+        let _ = self
+            .db
+            .create_entity(project, Some("project"), Some(project), &[])
+            .await;
         let obs_text = if let Some(r) = rationale {
             format!("Decision: {} (Rationale: {})", decision, r)
         } else {
@@ -233,18 +241,18 @@ impl Koala {
 
         let checkpoint_json = serde_json::to_string(&checkpoint)?;
         let latest_key = format!("handoff:{}:latest", project);
-        let timestamp_key = format!(
-            "handoff:{}:{}",
-            project,
-            Utc::now().format("%Y%m%d%H%M%S")
-        );
+        let timestamp_key = format!("handoff:{}:{}", project, Utc::now().format("%Y%m%d%H%M%S"));
 
         // Store latest handoff and historical checkpoint
-        self.remember_semantic(&latest_key, &checkpoint_json).await?;
-        self.remember_semantic(&timestamp_key, &checkpoint_json).await?;
+        self.remember_semantic(&latest_key, &checkpoint_json)
+            .await?;
+        self.remember_semantic(&timestamp_key, &checkpoint_json)
+            .await?;
 
         // Automatically update project status to reflect the checkpoint
-        let _ = self.update_project_status(project, summary, blockers, Some(next_step)).await;
+        let _ = self
+            .update_project_status(project, summary, blockers, Some(next_step))
+            .await;
 
         Ok(checkpoint)
     }

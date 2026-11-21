@@ -1490,22 +1490,30 @@ impl KoalaServer {
 
     async fn handle_get_project_context(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let project = args["project"]
+            .as_str()
+            .ok_or_else(|| missing_arg("project"))?;
         let ctx = brain.get_project_context(project).await?;
         Ok(serde_json::to_value(ctx)?)
     }
 
     async fn handle_bootstrap_context(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
+        let project = args["project"]
+            .as_str()
+            .ok_or_else(|| missing_arg("project"))?;
         let ctx = brain.bootstrap_context(project).await?;
         Ok(serde_json::to_value(ctx)?)
     }
 
     async fn handle_record_decision(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
-        let decision = args["decision"].as_str().ok_or_else(|| missing_arg("decision"))?;
+        let project = args["project"]
+            .as_str()
+            .ok_or_else(|| missing_arg("project"))?;
+        let decision = args["decision"]
+            .as_str()
+            .ok_or_else(|| missing_arg("decision"))?;
         let rationale = args["rationale"].as_str();
         let res = brain.record_decision(project, decision, rationale).await?;
         Ok(res)
@@ -1513,8 +1521,12 @@ impl KoalaServer {
 
     async fn handle_update_project_status(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
-        let status = args["status"].as_str().ok_or_else(|| missing_arg("status"))?;
+        let project = args["project"]
+            .as_str()
+            .ok_or_else(|| missing_arg("project"))?;
+        let status = args["status"]
+            .as_str()
+            .ok_or_else(|| missing_arg("status"))?;
         let blockers: Vec<String> = args["blockers"]
             .as_array()
             .map(|arr| {
@@ -1524,15 +1536,23 @@ impl KoalaServer {
             })
             .unwrap_or_default();
         let next_step = args["next_step"].as_str();
-        let res = brain.update_project_status(project, status, &blockers, next_step).await?;
+        let res = brain
+            .update_project_status(project, status, &blockers, next_step)
+            .await?;
         Ok(res)
     }
 
     async fn handle_create_handoff(&self, args: Value) -> Result<Value> {
         let brain = self.brain.lock().await;
-        let project = args["project"].as_str().ok_or_else(|| missing_arg("project"))?;
-        let summary = args["summary"].as_str().ok_or_else(|| missing_arg("summary"))?;
-        let next_step = args["next_step"].as_str().ok_or_else(|| missing_arg("next_step"))?;
+        let project = args["project"]
+            .as_str()
+            .ok_or_else(|| missing_arg("project"))?;
+        let summary = args["summary"]
+            .as_str()
+            .ok_or_else(|| missing_arg("summary"))?;
+        let next_step = args["next_step"]
+            .as_str()
+            .ok_or_else(|| missing_arg("next_step"))?;
         let blockers: Vec<String> = args["blockers"]
             .as_array()
             .map(|arr| {
@@ -1541,7 +1561,9 @@ impl KoalaServer {
                     .collect()
             })
             .unwrap_or_default();
-        let cp = brain.create_handoff(project, summary, next_step, &blockers).await?;
+        let cp = brain
+            .create_handoff(project, summary, next_step, &blockers)
+            .await?;
         Ok(serde_json::to_value(cp)?)
     }
 
