@@ -190,6 +190,12 @@ def main():
     stop(pa)
     stop(pb)
 
+    # ---- raw sql CLI test
+    out = subprocess.check_output([BIN, "--state-dir", os.path.join(TMP, "mig"), "sql",
+                                  "SELECT 1 as num, 'test' as txt, 2.5 as flt", "-f", "json"], text=True)
+    sql_rows = json.loads(out)
+    check("sql CLI decodes primitives", sql_rows == [{"flt": 2.5, "num": 1, "txt": "test"}])
+
 
 if __name__ == "__main__":
     try:
