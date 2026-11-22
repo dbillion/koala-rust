@@ -46,11 +46,11 @@ jobs:
           <html>
           <head>
               <meta charset="utf-8">
-              <meta http-equiv="refresh" content="0; url=koala/index.html">
+              <meta http-equiv="refresh" content="0; url=koala_rust/index.html">
               <title>koala-rust API Documentation</title>
           </head>
           <body>
-              <p>Redirecting to <a href="koala/index.html">koala API documentation</a>...</p>
+              <p>Redirecting to <a href="koala_rust/index.html">koala API documentation</a>...</p>
           </body>
           </html>
           EOF
