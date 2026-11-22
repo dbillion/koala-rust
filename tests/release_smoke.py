@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,7 @@ def query_vec_version(binary: Path, expected_version: str | None, extension: Pat
             text=True,
             timeout=60,
             env=env,
-            cwd=binary.parent,
+            cwd=state,
         )
 
     if result.returncode:
@@ -71,7 +72,7 @@ def main() -> int:
         capture_output=True,
         text=True,
         timeout=30,
-        cwd=binary.parent,
+        cwd=tempfile.gettempdir(),
     )
     if help_result.returncode:
         raise RuntimeError(f"--help failed: {help_result.stderr[-2000:]}")
@@ -81,7 +82,11 @@ def main() -> int:
     print(f"PASS bundled release: --help + vec_version() -> {bundled_version}")
 
     if raw_extension is not None:
-        raw_version = query_vec_version(binary, expected_version, raw_extension)
+        # Remove the adjacent bundle library so this proves KOALA_VEC0_PATH is honored.
+        with tempfile.TemporaryDirectory(prefix="koala-release-raw-binary-") as raw_dir:
+            raw_binary = Path(raw_dir) / binary.name
+            shutil.copy2(binary, raw_binary)
+            raw_version = query_vec_version(raw_binary, expected_version, raw_extension)
         if raw_version != bundled_version:
             raise RuntimeError(
                 f"raw extension version {raw_version} differs from bundle {bundled_version}"

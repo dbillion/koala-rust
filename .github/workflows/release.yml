@@ -29,7 +29,40 @@ env:
   SQLITE_VEC_VERSION: v0.1.10-alpha.4
 
 jobs:
+  resolve-tag:
+    name: Resolve immutable build commit
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+    steps:
+      - name: Resolve tag to commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            commit_sha="$GITHUB_SHA"
+          else
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+            object_type="$(jq -r '.object.type' <<<"$ref_json")"
+            object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            while [[ "$object_type" == "tag" ]]; do
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+              object_type="$(jq -r '.object.type' <<<"$tag_json")"
+              object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            done
+            if [[ "$object_type" != "commit" ]]; then
+              echo "Tag $RELEASE_TAG does not resolve to a commit" >&2
+              exit 1
+            fi
+            commit_sha="$object_sha"
+          fi
+          echo "Resolved build commit: $commit_sha"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve-tag
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     defaults:
@@ -64,11 +97,10 @@ jobs:
             rust_toolchain: "1.91.0"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout resolved commit
         uses: actions/checkout@v4
         with:
-          # Dispatch: build exactly the tag being released. Tag push: the pushed tag.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
 
       - name: Verify release bundle inputs
         env:
@@ -134,6 +166,7 @@ jobs:
           esac
 
           curl --fail --location --silent --show-error \
+            --connect-timeout 20 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
             "https://github.com/asg017/sqlite-vec/releases/download/${SQLITE_VEC_VERSION}/${asset}" \
             --output sqlite-vec.tar.gz
           python -c 'import hashlib, pathlib, sys; actual = hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest(); expected = sys.argv[2]; assert actual == expected, f"SHA-256 mismatch: {actual} != {expected}"' sqlite-vec.tar.gz "$expected_sha256"
@@ -198,7 +231,7 @@ jobs:
   release:
     name: Create GitHub Release
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, resolve-tag]
     runs-on: ubuntu-latest
     concurrency:
       group: koala-release-${{ inputs.tag || github.ref_name }}
@@ -206,6 +239,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout resolved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -260,17 +299,37 @@ jobs:
           sha256sum koala-rust-* vec0-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Verify release tag still points to built commit
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-tag.outputs.commit_sha }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          actual_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "Tag $RELEASE_TAG moved from $EXPECTED_COMMIT to $actual_commit during the build." >&2
+            exit 1
+          fi
+
       - name: Refuse to overwrite a published release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+          error_file="$(mktemp)"
+          trap 'rm -f "$error_file"' EXIT
+          if is_draft="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.draft' 2>"$error_file")"; then
             if [[ "$is_draft" != "true" ]]; then
               echo "Release $RELEASE_TAG is already published; refusing to overwrite it." >&2
               exit 1
             fi
+          elif grep -Eq 'HTTP 404|Not Found' "$error_file"; then
+            echo "No existing release for $RELEASE_TAG; a draft will be created."
+          else
+            cat "$error_file" >&2
+            exit 1
           fi
 
       - name: Upload draft release
@@ -363,6 +422,7 @@ jobs:
       - name: Verify uploaded assets and publish
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ needs.resolve-tag.outputs.commit_sha }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
@@ -376,17 +436,23 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$download_dir"
           cmp release-assets/SHA256SUMS.txt "$download_dir/SHA256SUMS.txt"
           (cd "$download_dir" && sha256sum -c SHA256SUMS.txt)
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          actual_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "Tag $RELEASE_TAG moved before publication: expected $EXPECTED_COMMIT, found $actual_commit" >&2
+            exit 1
+          fi
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
   publish-cargo:
     name: Publish to crates.io (optional)
-    needs: release
+    needs: [release, resolve-tag]
     runs-on: ubuntu-latest
     if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:
