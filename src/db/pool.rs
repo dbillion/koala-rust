@@ -5,30 +5,76 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /// Path of the sqlite-vec extension. Override with env KOALA_VEC0_PATH.
-/// On non-Linux platforms the extension is loaded from the directory of the
-/// running binary so the release ships `vec0.dll` / `vec0.dylib` next to it;
-/// Linux keeps the traditional system path.
+/// Release bundles place the matching `vec0.*` library beside the executable.
+/// Linux retains the system path as a fallback for existing installations.
+fn adjacent_vec0_path(executable: &Path, filename: &str) -> Option<PathBuf> {
+    let candidate = executable.parent()?.join(filename);
+    candidate.is_file().then_some(candidate)
+}
+
 pub fn vec0_path() -> String {
-    std::env::var("KOALA_VEC0_PATH")
+    if let Some(path) = std::env::var("KOALA_VEC0_PATH")
         .ok()
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| {
-            if cfg!(target_os = "windows") || cfg!(target_os = "macos") {
-                let exe = std::env::current_exe()
-                    .unwrap_or_else(|_| PathBuf::from("/usr/local/lib/vec0.so"));
-                let dir = exe.parent().unwrap_or_else(|| Path::new("/usr/local/lib"));
-                let ext = if cfg!(target_os = "windows") {
-                    "vec0.dll"
-                } else {
-                    "vec0.dylib"
-                };
-                dir.join(ext).to_string_lossy().to_string()
-            } else {
-                PathBuf::from("/usr/local/lib/vec0.so")
-                    .to_string_lossy()
-                    .to_string()
-            }
-        })
+        .filter(|path| !path.trim().is_empty())
+    {
+        return path;
+    }
+
+    let filename = if cfg!(target_os = "windows") {
+        "vec0.dll"
+    } else if cfg!(target_os = "macos") {
+        "vec0.dylib"
+    } else {
+        "vec0.so"
+    };
+    let executable = std::env::current_exe().ok();
+    let bundled = executable
+        .as_deref()
+        .and_then(|executable| adjacent_vec0_path(executable, filename));
+    if let Some(path) = bundled {
+        return path.to_string_lossy().to_string();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        PathBuf::from("/usr/local/lib/vec0.so")
+            .to_string_lossy()
+            .to_string()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        executable
+            .as_deref()
+            .and_then(|executable| executable.parent().map(|dir| dir.join(filename)))
+            .unwrap_or_else(|| PathBuf::from(filename))
+            .to_string_lossy()
+            .to_string()
+    }
+}
+
+#[cfg(test)]
+mod vec0_path_tests {
+    use super::adjacent_vec0_path;
+    use std::fs;
+
+    #[test]
+    fn finds_bundled_extension_next_to_executable() {
+        let directory =
+            std::env::temp_dir().join(format!("koala-vec0-path-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let executable = directory.join("koala-rust");
+        let extension = directory.join("vec0.so");
+        fs::write(&extension, b"test extension").unwrap();
+
+        assert_eq!(
+            adjacent_vec0_path(&executable, "vec0.so"),
+            Some(extension.clone())
+        );
+
+        fs::remove_file(extension).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
 }
 
 #[derive(Clone)]

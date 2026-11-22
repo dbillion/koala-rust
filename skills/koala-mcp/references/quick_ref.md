@@ -56,7 +56,7 @@ sync_merge_changes(changes, "agent-a")
 ```bash
 # Single
 emb = embed_text("How to configure HNSW")
-# → emb.embedding[384]
+# → emb.embedding[256]
 
 # Batch (10x faster for multiple)
 embs = embed_batch(["text1", "text2", "text3"])
@@ -87,7 +87,7 @@ plugin_list()
 | Operation | Typical Latency | Batch? |
 |-----------|----------------|--------|
 | Fact write/read | < 1 ms | No |
-| Embed (384-dim) | ~50 ms | Yes (embed_batch) |
+| Embed (256-dim) | ~50 ms | Yes (embed_batch) |
 | Vector upsert | < 5 ms | No |
 | Vector search (k=10) | < 10 ms | No |
 | Sync merge (1000 ops) | ~100 ms | No |
@@ -99,8 +99,8 @@ plugin_list()
 
 | Error | Fix |
 |-------|-----|
-| `sqlite-vec not loaded` | Install `vec0.so` or rebuild with `sqlite-vec` feature |
-| `dimension mismatch` | Use 384-dim (all-MiniLM-L6-v2) |
+| `sqlite-vec not loaded` | Use the release bundle with adjacent `vec0.*`, or set `KOALA_VEC0_PATH` |
+| `dimension mismatch` | Match the configured model dimension (default 256; `KOALA_EMBED_DIM` overrides) |
 | `vector_clock conflict` | Merge changes, increment clock, retry |
 | `plugin not found` | `plugin_install("name")` first |
 | `MCP connection failed` | Check binary path, `chmod +x`, `KOALA_STATE_DIR` |

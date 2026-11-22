@@ -106,14 +106,30 @@ flowchart TB
 
 ## 🚀 Quick Start
 
-### Install (Binary)
+### Install (Self-contained release bundle)
+
+Starting with the next tagged release after the bundle fix, choose the archive matching your platform from [GitHub Releases](https://github.com/dbillion/koala-rust/releases). Each archive contains the Koala executable and matching `sqlite-vec` loadable extension (`vec0.so`, `vec0.dylib`, or `vec0.dll`). **v0.3.3 and earlier do not include these bundles**; install a compatible extension separately and set `KOALA_VEC0_PATH`.
+
+| Platform | Release archive |
+|---|---|
+| Linux x86_64 | `koala-rust-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux ARM64 | `koala-rust-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Intel | `koala-rust-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `koala-rust-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.tar.gz` |
+
+Example for Linux x86_64:
 
 ```bash
-# Linux/macOS/Windows — download from releases
-curl -L https://github.com/dbillion/koala-rust/releases/latest/download/koala-rust-$(uname -s)-$(uname -m) -o koala-rust
+curl -fL https://github.com/dbillion/koala-rust/releases/latest/download/koala-rust-x86_64-unknown-linux-gnu.tar.gz -o koala-rust.tar.gz
+tar -xzf koala-rust.tar.gz
 chmod +x koala-rust
+./koala-rust --serve
+```
 
-# Or via cargo
+Keep the executable and its adjacent `vec0.*` library together. For source/Cargo installs, install a compatible sqlite-vec extension separately and set `KOALA_VEC0_PATH` to its full path.
+
+```bash
 cargo install --git https://github.com/dbillion/koala-rust
 ```
 
