@@ -25,5 +25,7 @@ These findings were observed against the unmodified v0.3.3 application while bui
 ## Snapshot baseline observations
 
 - The current MCP `tools/list` response contains 60 tool definitions (the original plan estimated 53); all names and input schemas are captured.
-- The CLI snapshot captures 51 command results and all CLI/context help entries. The only omitted command execution is the live registry update described above.
+- The CLI snapshot captures deterministic command results in JSON plus representative text-format outputs, and all CLI/context help entries.
+- `embed-text` and `embed-batch` are not executed in snapshots because they require a separately provisioned pretrained Model2Vec model. Their CLI help is captured; embedding behavior is exercised by the E2E/model tests.
+- `plugin-update-registry` is not executed because it mutates against live external registry data. Its CLI help is captured.
 - The snapshot and E2E harnesses set `KOALA_STATE_DIR` to temporary directories; they do not use or modify the user's real `~/.koala` state.

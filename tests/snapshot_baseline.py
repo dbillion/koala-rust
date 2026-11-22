@@ -2,10 +2,12 @@
 """Capture and verify the v0.3.3 CLI, MCP tool, and SQLite schema contracts."""
 import argparse
 import difflib
+from functools import wraps
 import json
 import os
 from pathlib import Path
 import re
+import selectors
 import sqlite3
 import subprocess
 import sys
@@ -20,22 +22,16 @@ VECTOR = ",".join(["0"] * 256)
 
 
 def normalize(value, state_dir):
-    if isinstance(value, float):
-        return "<NUMBER>"
     if isinstance(value, str):
         value = value.replace(str(state_dir), "<STATE_DIR>")
         value = re.sub(r"\d{4}-\d\d-\d\d[T ][^\s\"]+", "<TIMESTAMP>", value)
         return value
     if isinstance(value, list):
-        result = [normalize(item, state_dir) for item in value]
-        if result and all(isinstance(item, dict) and "name" in item for item in result):
-            result.sort(key=lambda item: item["name"])
-        return result
+        return [normalize(item, state_dir) for item in value]
     if isinstance(value, dict):
         return {
             key: "<TIMESTAMP>" if key in {"created_at", "updated_at", "deleted_at", "loaded_at", "timestamp"}
             else "<UUID>" if key in {"peer_id", "from_peer"}
-            else "<NUMBER>" if key == "pages"
             else normalize(item, state_dir)
             for key, item in sorted(value.items())
         }
@@ -62,25 +58,43 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
-def capture_tools():
-    state = Path(tempfile.mkdtemp(prefix="koala-tools-snapshot-"))
+def temporary_state(prefix):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            with tempfile.TemporaryDirectory(prefix=prefix) as directory:
+                return function(Path(directory), *args, **kwargs)
+        return wrapped
+    return decorate
+
+
+@temporary_state("koala-tools-snapshot-")
+def capture_tools(state):
     env = environment(state)
     proc = subprocess.Popen(
         [str(BINARY), "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, env=env, cwd=ROOT,
     )
     request_id = 0
+    read_buffer = ""
+    selector = selectors.DefaultSelector()
+    selector.register(proc.stdout, selectors.EVENT_READ)
 
     def rpc(method, params=None):
-        nonlocal request_id
+        nonlocal request_id, read_buffer
         request_id += 1
         request = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
         proc.stdin.write(json.dumps(request) + "\n")
         proc.stdin.flush()
         while True:
-            line = proc.stdout.readline()
-            if not line:
-                raise RuntimeError(f"MCP server exited while handling {method}")
+            while "\n" not in read_buffer:
+                if not selector.select(timeout=30):
+                    raise TimeoutError(f"MCP server timed out handling {method}")
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    raise RuntimeError(f"MCP server exited while handling {method}")
+                read_buffer += chunk.decode("utf-8")
+            line, read_buffer = read_buffer.split("\n", 1)
             response = json.loads(line)
             if response.get("id") == request_id:
                 if "error" in response:
@@ -94,13 +108,18 @@ def capture_tools():
             "clientInfo": {"name": "koala-snapshot", "version": "1"},
         })
         tools = rpc("tools/list")["tools"]
-        tools.sort(key=lambda tool: tool["name"])
         if len(tools) < 53:
             raise RuntimeError(f"Expected at least 53 MCP tools, got {len(tools)}")
         return tools
     finally:
-        proc.stdin.close()
-        proc.wait(timeout=30)
+        selector.close()
+        if proc.stdin and not proc.stdin.closed:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 def command_help():
@@ -114,12 +133,14 @@ def command_help():
         return found
 
     result = {}
-    root_help = subprocess.run([str(BINARY), "--help"], check=True, capture_output=True, text=True)
+    root_help = subprocess.run(
+        [str(BINARY), "--help"], check=True, capture_output=True, text=True, timeout=30
+    )
     for command in names(root_help.stdout):
         if command == "help":
             continue
         help_result = subprocess.run(
-            [str(BINARY), command, "--help"], check=True, capture_output=True, text=True
+            [str(BINARY), command, "--help"], check=True, capture_output=True, text=True, timeout=30
         )
         result[command] = help_result.stdout
         if command == "context":
@@ -128,23 +149,26 @@ def command_help():
                     continue
                 nested = subprocess.run(
                     [str(BINARY), "context", action, "--help"],
-                    check=True, capture_output=True, text=True,
+                    check=True, capture_output=True, text=True, timeout=30,
                 )
                 result[f"context {action}"] = nested.stdout
     result["<root>"] = root_help.stdout
     return result
 
 
-def run_cli(state, *args):
+def run_cli(state, *args, output_format="json"):
     result = subprocess.run(
-        [str(BINARY), *args, "--format", "json"],
+        [str(BINARY), *args, "--format", output_format],
         capture_output=True, text=True, timeout=180,
         env=environment(state), cwd=ROOT,
     )
-    try:
-        output = json.loads(result.stdout) if result.stdout.strip() else None
-    except json.JSONDecodeError:
-        output = result.stdout.strip()
+    if output_format == "json":
+        try:
+            output = json.loads(result.stdout) if result.stdout.strip() else None
+        except json.JSONDecodeError:
+            output = result.stdout.strip()
+    else:
+        output = result.stdout.rstrip()
     if result.returncode:
         error_lines = [
             line for line in result.stderr.splitlines()
@@ -160,17 +184,22 @@ def run_cli(state, *args):
     return {"exit_code": 0, "output": normalize(output, state)}
 
 
-def capture_cli():
-    state = Path(tempfile.mkdtemp(prefix="koala-cli-snapshot-"))
+@temporary_state("koala-cli-snapshot-")
+def capture_cli(state):
     results = {}
 
     def record(name, *args):
         results[name] = run_cli(state, *args)
         return results[name].get("output")
 
+    def record_text(name, *args):
+        results[name] = run_cli(state, *args, output_format="text")
+        return results[name].get("output")
+
     fact = record("fact-write", "fact-write", "--name", "snapshot-fact", "--text", "baseline fact")
     fact_id = fact["id"]
     record("fact-read", "fact-read", "--name", "snapshot-fact")
+    record_text("fact-read-text", "fact-read", "--name", "snapshot-fact")
     record("fact-versions-initial", "fact-versions", "--name", "snapshot-fact")
     time.sleep(1.1)  # SQLite CURRENT_TIMESTAMP has one-second resolution.
     record("fact-write-version", "fact-write", "--name", "snapshot-fact", "--text", "updated baseline fact")
@@ -198,8 +227,6 @@ def capture_cli():
     record("model-status", "model-status")
     record("model-save", "model-save", "--step", "2")
     record("model-load", "model-load", "--step", "2")
-    record("embed-text", "embed-text", "--text", "snapshot embedding")
-    record("embed-batch", "embed-batch", "--texts", "alpha,beta")
     record("vector-upsert-fact", "vector-upsert-fact", "--fact-id", str(fact_id), "--embedding", VECTOR)
     record("vector-search-facts", "vector-search-facts", "--query-embedding", VECTOR, "--k", "3")
     record("sync-push", "sync-push")
@@ -219,6 +246,7 @@ def capture_cli():
     record("feedback", "feedback", "--name", "snapshot-entity", "--signal", "positive", "--kind", "entity")
     record("explain-rank", "explain-rank", "--name", "snapshot-entity")
     record("health", "health")
+    record_text("health-text", "health")
     record("sql", "sql", "SELECT 1 AS value, 'snapshot' AS label")
     record("context-bootstrap", "context", "bootstrap", "--project", "snapshot")
     record("context-checkpoint", "context", "checkpoint", "--project", "snapshot", "--summary", "baseline", "--next", "continue")
@@ -228,8 +256,12 @@ def capture_cli():
     record("context-get-project", "context", "get-project", "--project", "snapshot")
     record("fact-delete", "fact-delete", "--name", "snapshot-fact")
 
-    # This command contacts the public registry; its CLI contract is covered by help.
-    skipped = {"plugin-update-registry": "contacts the public registry"}
+    # External model and registry operations are documented, not run in snapshots.
+    skipped = {
+        "embed-text": "requires a pretrained Model2Vec model",
+        "embed-batch": "requires a pretrained Model2Vec model",
+        "plugin-update-registry": "contacts the public registry",
+    }
     db = state / "koala.db"
     connection = sqlite3.connect(db)
     rows = connection.execute(

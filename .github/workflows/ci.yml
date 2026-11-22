@@ -16,8 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch PR base for LOC allowlist check
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
       - name: Enforce Rust file length
-        run: scripts/check_loc.sh
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            scripts/check_loc.sh FETCH_HEAD
+          else
+            scripts/check_loc.sh
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
