@@ -1,0 +1,14 @@
+mod context;
+mod core;
+mod entities;
+mod facts;
+mod model;
+mod model_state;
+mod model_status;
+mod plugin_marketplace;
+mod plugins;
+mod recall;
+mod sync;
+mod tasks;
+mod thinking;
+mod vector;
