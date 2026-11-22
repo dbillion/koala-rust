@@ -1,0 +1,1253 @@
+{
+  "commands": {
+    "conclusion": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "summary": "snapshot conclusion"
+      }
+    },
+    "context-bootstrap": {
+      "exit_code": 0,
+      "output": {
+        "project": {
+          "architecture": null,
+          "latest_handoff": null,
+          "open_tasks": [],
+          "project": "snapshot",
+          "recent_decisions": [],
+          "status": null
+        },
+        "user": {
+          "general_facts": [],
+          "preferences": [],
+          "stack": []
+        }
+      }
+    },
+    "context-checkpoint": {
+      "exit_code": 0,
+      "output": {
+        "blockers": [],
+        "next_step": "continue",
+        "project": "snapshot",
+        "summary": "baseline",
+        "timestamp": "<TIMESTAMP>"
+      }
+    },
+    "context-decision": {
+      "exit_code": 0,
+      "output": {
+        "decision": "keep behavior",
+        "project": "snapshot",
+        "rationale": "baseline",
+        "recorded_at": "<TIMESTAMP>"
+      }
+    },
+    "context-get-project": {
+      "exit_code": 0,
+      "output": {
+        "architecture": null,
+        "latest_handoff": {
+          "blockers": [],
+          "next_step": "continue",
+          "project": "snapshot",
+          "summary": "baseline",
+          "timestamp": "<TIMESTAMP>"
+        },
+        "open_tasks": [],
+        "project": "snapshot",
+        "recent_decisions": [
+          {
+            "decision": "keep behavior",
+            "project": "snapshot",
+            "rationale": "baseline",
+            "recorded_at": "<TIMESTAMP>"
+          }
+        ],
+        "status": {
+          "blockers": [
+            "none"
+          ],
+          "next_step": "continue",
+          "project": "snapshot",
+          "status": "active",
+          "updated_at": "<TIMESTAMP>"
+        }
+      }
+    },
+    "context-get-user": {
+      "exit_code": 0,
+      "output": {
+        "general_facts": [],
+        "preferences": [],
+        "stack": []
+      }
+    },
+    "context-status": {
+      "exit_code": 0,
+      "output": {
+        "blockers": [
+          "none"
+        ],
+        "next_step": "continue",
+        "project": "snapshot",
+        "status": "active",
+        "updated_at": "<TIMESTAMP>"
+      }
+    },
+    "embed-batch": {
+      "exit_code": 0,
+      "output": {
+        "embeddings": [
+          [
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>"
+          ],
+          [
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>",
+            "<NUMBER>"
+          ]
+        ]
+      }
+    },
+    "embed-text": {
+      "exit_code": 0,
+      "output": {
+        "embedding": [
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>",
+          "<NUMBER>"
+        ]
+      }
+    },
+    "entity-add-obs": {
+      "exit_code": 0,
+      "output": {
+        "added": 2,
+        "name": "snapshot-entity"
+      }
+    },
+    "entity-create": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "name": "snapshot-entity"
+      }
+    },
+    "entity-create-related": {
+      "exit_code": 0,
+      "output": {
+        "id": 2,
+        "name": "snapshot-related"
+      }
+    },
+    "entity-open": {
+      "exit_code": 0,
+      "output": [
+        {
+          "name": "snapshot-entity",
+          "observations": [
+            "alpha",
+            "beta",
+            "gamma",
+            "delta"
+          ],
+          "project": "snapshot",
+          "relations": [],
+          "type_": "note"
+        },
+        {
+          "name": "snapshot-related",
+          "observations": [],
+          "project": "snapshot",
+          "relations": [],
+          "type_": "note"
+        }
+      ]
+    },
+    "entity-search": {
+      "exit_code": 0,
+      "output": [
+        "snapshot-entity"
+      ]
+    },
+    "explain-rank": {
+      "exit_code": 0,
+      "output": {
+        "name": "snapshot-entity",
+        "score": "<NUMBER>",
+        "signal": "entity:positive"
+      }
+    },
+    "fact-delete": {
+      "exit_code": 0,
+      "output": {
+        "deleted": true,
+        "name": "snapshot-fact"
+      }
+    },
+    "fact-delete-prefix": {
+      "exit_code": 0,
+      "output": {
+        "deleted": 2,
+        "prefix": "snapshot-prefix-"
+      }
+    },
+    "fact-list": {
+      "exit_code": 0,
+      "output": [
+        "snapshot-fact"
+      ]
+    },
+    "fact-prefix-write-a": {
+      "exit_code": 0,
+      "output": {
+        "id": 3,
+        "name": "snapshot-prefix-a",
+        "status": "written"
+      }
+    },
+    "fact-prefix-write-b": {
+      "exit_code": 0,
+      "output": {
+        "id": 4,
+        "name": "snapshot-prefix-b",
+        "status": "written"
+      }
+    },
+    "fact-read": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "name": "snapshot-fact",
+        "text": "baseline fact"
+      }
+    },
+    "fact-versions-initial": {
+      "exit_code": 0,
+      "output": [
+        [
+          1,
+          "baseline fact",
+          "<TIMESTAMP>",
+          true
+        ]
+      ]
+    },
+    "fact-versions-updated": {
+      "exit_code": 0,
+      "output": [
+        [
+          2,
+          "updated baseline fact",
+          "<TIMESTAMP>",
+          true
+        ],
+        [
+          1,
+          "baseline fact",
+          "<TIMESTAMP>",
+          false
+        ]
+      ]
+    },
+    "fact-write": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "name": "snapshot-fact",
+        "status": "written"
+      }
+    },
+    "fact-write-version": {
+      "exit_code": 0,
+      "output": {
+        "id": 2,
+        "name": "snapshot-fact",
+        "status": "written"
+      }
+    },
+    "feedback": {
+      "exit_code": 0,
+      "output": {
+        "recorded": true
+      }
+    },
+    "health": {
+      "exit_code": 0,
+      "output": {
+        "cache_used": 0,
+        "journal": true,
+        "pages": "<NUMBER>",
+        "pending_flush": false,
+        "tables": 26,
+        "usage_tracked": 0
+      }
+    },
+    "model-init": {
+      "exit_code": 0,
+      "output": {
+        "initialized": true
+      }
+    },
+    "model-load": {
+      "exit_code": 0,
+      "output": {
+        "loaded": true,
+        "step": 2
+      }
+    },
+    "model-predict": {
+      "exit_code": 1,
+      "stderr": "Error: no model loaded (model_init or model_load first)",
+      "stdout": null
+    },
+    "model-save": {
+      "exit_code": 1,
+      "stderr": "Error: no model loaded",
+      "stdout": null
+    },
+    "model-status": {
+      "exit_code": 0,
+      "output": {
+        "activation": "none",
+        "allocated": 0,
+        "backend": "pure-rust",
+        "committed": 0,
+        "gpu": "unavailable",
+        "gpu_reason": "no model loaded",
+        "hidden": 0,
+        "initialized": false,
+        "last_loss": null,
+        "rank": {
+          "total_entities": 0,
+          "total_facts": 0,
+          "total_observations": 0,
+          "total_relations": 0,
+          "total_tasks": 0
+        },
+        "step": 0
+      }
+    },
+    "model-train": {
+      "exit_code": 1,
+      "stderr": "Error: no model loaded (model_init or model_load first)",
+      "stdout": null
+    },
+    "plugin-call": {
+      "exit_code": 1,
+      "stderr": "Error: Plugin not found: hash-tools",
+      "stdout": null
+    },
+    "plugin-install": {
+      "exit_code": 0,
+      "output": {
+        "installed": true,
+        "path": "<STATE_DIR>/plugins/wasm/hash-tools.wasm"
+      }
+    },
+    "plugin-registry-stats": {
+      "exit_code": 0,
+      "output": {
+        "categories": {
+          "wasm": 3
+        },
+        "installed_plugins": 1,
+        "total_plugins": 3
+      }
+    },
+    "plugin-search": {
+      "exit_code": 0,
+      "output": [
+        {
+          "author": "koala",
+          "description": "Cryptographic hash functions (MD5, SHA1, SHA256, SHA512)",
+          "download_url": "builtin://hash-tools",
+          "name": "hash-tools",
+          "plugin_type": "wasm",
+          "sha256": null,
+          "version": "1.0.0"
+        }
+      ]
+    },
+    "plugin-uninstall": {
+      "exit_code": 0,
+      "output": {
+        "name": "hash-tools",
+        "uninstalled": true
+      }
+    },
+    "relation-create": {
+      "exit_code": 0,
+      "output": {
+        "from": "snapshot-entity",
+        "id": 1,
+        "to": "snapshot-related",
+        "type": "related"
+      }
+    },
+    "sql": {
+      "exit_code": 0,
+      "output": [
+        {
+          "label": "snapshot",
+          "value": 1
+        }
+      ]
+    },
+    "sync-pull": {
+      "exit_code": 0,
+      "output": {
+        "pulled": true
+      }
+    },
+    "sync-push": {
+      "exit_code": 0,
+      "output": {
+        "pushed": true
+      }
+    },
+    "sync-status": {
+      "exit_code": 0,
+      "output": {
+        "status": "ok"
+      }
+    },
+    "task-create": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "title": "snapshot task"
+      }
+    },
+    "task-query": {
+      "exit_code": 0,
+      "output": [
+        {
+          "body": "baseline task",
+          "created_at": "<TIMESTAMP>",
+          "id": 1,
+          "priority": "medium",
+          "project": "snapshot",
+          "status": "not_started",
+          "title": "snapshot task",
+          "updated_at": "<TIMESTAMP>"
+        }
+      ]
+    },
+    "task-update": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "updated": true
+      }
+    },
+    "think": {
+      "exit_code": 0,
+      "output": {
+        "id": 1,
+        "next_step": 2,
+        "step": 1
+      }
+    },
+    "thought-history": {
+      "exit_code": 0,
+      "output": [
+        [
+          1,
+          1,
+          "snapshot thought",
+          "<TIMESTAMP>"
+        ]
+      ]
+    },
+    "thought-reset": {
+      "exit_code": 0,
+      "output": {
+        "cleared": 1
+      }
+    },
+    "vector-search-facts": {
+      "exit_code": 0,
+      "output": [
+        {
+          "id": 1,
+          "metadata": {},
+          "score": "<NUMBER>"
+        }
+      ]
+    },
+    "vector-upsert-fact": {
+      "exit_code": 0,
+      "output": {
+        "fact_id": 1,
+        "upserted": true
+      }
+    }
+  },
+  "not_run": {
+    "plugin-update-registry": "contacts the public registry"
+  }
+}
