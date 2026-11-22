@@ -2,7 +2,7 @@
 
 All notable changes to Koala are documented here.
 
-## Unreleased
+## v0.3.4 - 2026-11-22
 
 ### Fixed
 - Bundle the matching sqlite-vec loadable library with each native release executable.
