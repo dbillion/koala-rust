@@ -4,7 +4,7 @@ Local, private memory for AI agents. One small binary that speaks MCP over stdio
 Versioned facts, semantic recall, knowledge graph, tasks, handoff notes, sync and WASM plugins.
 Data stays in a SQLite file on your machine.
 
-> **Status (v0.3.3): useful for pilots and personal or team agent memory. Not yet ready for
+> **Status (v0.3.4): useful for pilots and personal or team agent memory. Not yet ready for
 > regulated production data.** There is no encryption at rest, no access control, no tamper-evident
 > audit log and no certification. See [Readiness](#readiness-for-health-finance-and-defense) and the
 > [open issues](https://github.com/dbillion/koala-rust/issues). Every number below was measured on
