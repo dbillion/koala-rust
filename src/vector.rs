@@ -348,23 +348,26 @@ impl VectorEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use std::str::FromStr;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     #[tokio::test]
     async fn test_vector_engine_rejects_wrong_embedding_dimensions() {
-        // Same setup as Database::new: vec0 must be loaded on the connection.
-        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
-            .unwrap()
-            .extension(crate::db::vec0_path());
+        // This assertion exercises validation before any database query, so
+        // use a plain in-memory SQLite pool without loading sqlite-vec.
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect_with(opts)
+            .connect("sqlite::memory:")
             .await
             .unwrap();
-        let engine = VectorEngine::new(pool, VectorConfig::default())
-            .await
-            .unwrap();
+        let engine = VectorEngine {
+            pool,
+            config: VectorConfig {
+                dimension: VECTOR_DIM,
+                ..VectorConfig::default()
+            },
+            initialized: Arc::new(RwLock::new(false)),
+            rebuilt: false,
+        };
         let wrong_dimension = vec![0.1f32; VECTOR_DIM + 1];
 
         let error = engine
