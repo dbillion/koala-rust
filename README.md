@@ -337,7 +337,7 @@ After restart, agents get 3 tools:
 
 ### Prerequisites
 
-- Rust 1.86+ (MSRV)
+- Rust 1.89+ (MSRV)
 - `sqlite3` dev headers
 - `pkg-config`
 

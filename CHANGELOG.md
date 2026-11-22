@@ -12,7 +12,7 @@ All notable changes to Koala are documented here.
 ### Security
 - Upgrade Wasmtime to 36.0.23, which includes fixes for the reported Cranelift sandbox-escape vulnerabilities.
 - Remove the unused `wasmtime-wasi` dependency.
-- Raise the declared minimum supported Rust version to 1.86.
+- Raise the declared minimum supported Rust version to 1.89.
 
 ### Build and release
 - Track `Cargo.lock` and use locked dependency resolution in CI and release builds.
