@@ -110,7 +110,7 @@ This skill teaches agents how to effectively use koala-rust's 50 MCP tools for p
 ### Embeddings
 | Tool | Purpose | Key Params |
 |------|---------|------------|
-| `embed_text` | Generate embedding | `text` → `embedding[384]` |
+| `embed_text` | Generate embedding | `text` → `embedding[256]` |
 | `embed_batch` | Batch embeddings | `texts[]` → `embeddings[][]` |
 
 ### Plugins
@@ -259,8 +259,8 @@ async def call_koala(tool, args):
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `sqlite-vec not loaded` | Extension missing | Rebuild with `sqlite-vec` or install `vec0.so` |
-| `embedding dimension mismatch` | Wrong model | Ensure 384-dim (all-MiniLM-L6-v2) |
+| `sqlite-vec not loaded` | Extension missing | Use the self-contained release bundle (binary + adjacent `vec0.*`) or set `KOALA_VEC0_PATH` to the platform library |
+| `embedding dimension mismatch` | Model/table dimensions differ | Use the configured model dimension (default 256; override with `KOALA_EMBED_DIM`) |
 | `vector_clock conflict` | Concurrent writes | Merge changes, increment clock, retry |
 | `plugin not found` | Not installed | `plugin_install("name")` or check `plugin_list` |
 | `MCP connection failed` | Binary not executable | `chmod +x koala-rust`, check path |

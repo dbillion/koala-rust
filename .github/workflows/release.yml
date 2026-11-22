@@ -1,23 +1,68 @@
 name: Release
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - 'src/**'
+      - 'tests/**'
+      - 'third-party/**'
+      - 'build.rs'
+      - '.cargo/**'
+      - 'rust-toolchain*'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   push:
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build and publish (e.g. v0.3.0) - must match an existing tag'
+        description: 'Existing tag containing the self-contained bundle packaging support'
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  SQLITE_VEC_VERSION: v0.1.10-alpha.4
 
 jobs:
+  resolve-tag:
+    name: Resolve immutable build commit
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+    steps:
+      - name: Resolve tag to commit
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            commit_sha="$GITHUB_SHA"
+          else
+            ref_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG")"
+            object_type="$(jq -r '.object.type' <<<"$ref_json")"
+            object_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            while [[ "$object_type" == "tag" ]]; do
+              tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha")"
+              object_type="$(jq -r '.object.type' <<<"$tag_json")"
+              object_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            done
+            if [[ "$object_type" != "commit" ]]; then
+              echo "Tag $RELEASE_TAG does not resolve to a commit" >&2
+              exit 1
+            fi
+            commit_sha="$object_sha"
+          fi
+          echo "Resolved build commit: $commit_sha"
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: resolve-tag
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     defaults:
@@ -31,32 +76,50 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: koala-rust-x86_64-unknown-linux-gnu
-            rust_toolchain: stable
+            rust_toolchain: "1.91.0"
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             artifact: koala-rust-aarch64-unknown-linux-gnu
-            rust_toolchain: stable
+            rust_toolchain: "1.91.0"
           # macOS
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-15-intel
             artifact: koala-rust-x86_64-apple-darwin
-            rust_toolchain: stable
+            rust_toolchain: "1.91.0"
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: koala-rust-aarch64-apple-darwin
-            rust_toolchain: stable
+            rust_toolchain: "1.91.0"
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: koala-rust-x86_64-pc-windows-msvc.exe
-            rust_toolchain: stable
+            rust_toolchain: "1.91.0"
 
     steps:
-      - name: Checkout repository
+      - name: Checkout resolved commit
         uses: actions/checkout@v4
         with:
-          # Dispatch: build exactly the tag being released. Tag push: the pushed tag.
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
+
+      - name: Verify release bundle inputs
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          test -s tests/release_smoke.py
+          test -s third-party/sqlite-vec/NOTICE.md
+          test -s third-party/sqlite-vec/LICENSE-APACHE
+          test -s third-party/sqlite-vec/LICENSE-MIT
+          grep -F "version \`${SQLITE_VEC_VERSION}\`" third-party/sqlite-vec/NOTICE.md
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            tag_version="${RELEASE_TAG#v}"
+            cargo_version="$(sed -nE 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -1)"
+            if [[ "$tag_version" != "$cargo_version" ]]; then
+              echo "Release tag $RELEASE_TAG does not match Cargo.toml version $cargo_version" >&2
+              exit 1
+            fi
+          fi
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -64,60 +127,126 @@ jobs:
           toolchain: ${{ matrix.rust_toolchain }}
           target: ${{ matrix.target }}
 
+      - name: Set up Python for release smoke test
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Download pinned sqlite-vec extension
+        run: |
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu)
+              asset="sqlite-vec-${SQLITE_VEC_VERSION#v}-loadable-linux-x86_64.tar.gz"
+              expected_sha256="0349d1cffea2da145eb195ee0fa0e7803544a9491a458c58aeacfb434517abf1"
+              extension="so"
+              ;;
+            aarch64-unknown-linux-gnu)
+              asset="sqlite-vec-${SQLITE_VEC_VERSION#v}-loadable-linux-aarch64.tar.gz"
+              expected_sha256="32b2333e0b14d318036320c729cab35655b32e8ac3edeed1d048369e6b0b6095"
+              extension="so"
+              ;;
+            x86_64-apple-darwin)
+              asset="sqlite-vec-${SQLITE_VEC_VERSION#v}-loadable-macos-x86_64.tar.gz"
+              expected_sha256="eaa956fa7f145260c7f607ae5e094e48ce6366bb8d0b284266504405b62c7d17"
+              extension="dylib"
+              ;;
+            aarch64-apple-darwin)
+              asset="sqlite-vec-${SQLITE_VEC_VERSION#v}-loadable-macos-aarch64.tar.gz"
+              expected_sha256="9c4c3c9fee1cd68d07028f90c9e31b67f13ca1a1737435ae569e8fe7a17b5a91"
+              extension="dylib"
+              ;;
+            x86_64-pc-windows-msvc)
+              asset="sqlite-vec-${SQLITE_VEC_VERSION#v}-loadable-windows-x86_64.tar.gz"
+              expected_sha256="39d29bd26252b61daf7e1d3d0b538336e5364e1022c61084bba91f6570941017"
+              extension="dll"
+              ;;
+            *)
+              echo "No pinned sqlite-vec binary for ${{ matrix.target }}" >&2
+              exit 1
+              ;;
+          esac
+
+          curl --fail --location --silent --show-error \
+            --connect-timeout 20 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
+            "https://github.com/asg017/sqlite-vec/releases/download/${SQLITE_VEC_VERSION}/${asset}" \
+            --output sqlite-vec.tar.gz
+          python -c 'import hashlib, pathlib, sys; actual = hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest(); expected = sys.argv[2]; assert actual == expected, f"SHA-256 mismatch: {actual} != {expected}"' sqlite-vec.tar.gz "$expected_sha256"
+          mkdir -p sqlite-vec
+          tar -xzf sqlite-vec.tar.gz -C sqlite-vec
+          test -s "sqlite-vec/vec0.${extension}"
+
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install sqlite3 pkg-config
-
-      - name: Install cross (for cross-compilation)
-        if: matrix.cross == 'true'
-        run: cargo install cross --locked
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      - name: Build (native)
-        if: matrix.cross != 'true'
+      - name: Build release binary
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          cargo build --locked --release --target ${{ matrix.target }}
           ls -la target/${{ matrix.target }}/release/
 
-      - name: Build (cross)
-        if: matrix.cross == 'true'
+      - name: Prepare and smoke-test release bundle
         run: |
-          cross build --release --target ${{ matrix.target }}
-          ls -la target/${{ matrix.target }}/release/
+          mkdir -p artifacts bundle/licenses/sqlite-vec
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            binary="koala-rust.exe"
+            cp "target/${{ matrix.target }}/release/koala-rust.exe" "bundle/$binary"
+          else
+            binary="koala-rust"
+            cp "target/${{ matrix.target }}/release/koala-rust" "bundle/$binary"
+            chmod +x "bundle/$binary"
+          fi
 
-      - name: Prepare artifact
-        run: |
-          mkdir -p artifacts
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp target/${{ matrix.target }}/release/koala-rust.exe artifacts/${{ matrix.artifact }}
-          else
-            cp target/${{ matrix.target }}/release/koala-rust artifacts/${{ matrix.artifact }}
+          case "${{ matrix.target }}" in
+            *-windows-msvc) extension="dll" ;;
+            *-apple-darwin) extension="dylib" ;;
+            *) extension="so" ;;
+          esac
+          cp "sqlite-vec/vec0.$extension" "bundle/vec0.$extension"
+          cp third-party/sqlite-vec/LICENSE-* third-party/sqlite-vec/NOTICE.md bundle/licenses/sqlite-vec/
+          if [[ "$RUNNER_OS" == "Linux" && -e /usr/local/lib/vec0.so ]]; then
+            echo "System vec0.so would mask bundled-library discovery" >&2
+            exit 1
           fi
-          # Verify binary works
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            ./artifacts/${{ matrix.artifact }} --help || true
-          else
-            chmod +x artifacts/${{ matrix.artifact }}
-            ./artifacts/${{ matrix.artifact }} --help || true
-          fi
+          raw_extension="artifacts/vec0-${{ matrix.target }}.$extension"
+          cp "bundle/vec0.$extension" "$raw_extension"
+          python tests/release_smoke.py "$PWD/bundle/$binary" "$PWD/$raw_extension"
+
+          cp "bundle/$binary" "artifacts/${{ matrix.artifact }}"
+          tar -czf "artifacts/koala-rust-${{ matrix.target }}.tar.gz" \
+            -C bundle "$binary" "vec0.$extension" "licenses/sqlite-vec"
+          tar -tzf "artifacts/koala-rust-${{ matrix.target }}.tar.gz"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: artifacts/${{ matrix.artifact }}
+          name: koala-rust-${{ matrix.target }}
+          path: artifacts/*
           retention-days: 90
 
   release:
     name: Create GitHub Release
-    needs: build
+    if: github.event_name != 'pull_request'
+    needs: [build, resolve-tag]
     runs-on: ubuntu-latest
+    concurrency:
+      group: koala-release-${{ inputs.tag || github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
     steps:
+      - name: Checkout resolved commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -135,6 +264,16 @@ jobs:
             koala-rust-x86_64-apple-darwin
             koala-rust-aarch64-apple-darwin
             koala-rust-x86_64-pc-windows-msvc.exe
+            koala-rust-x86_64-unknown-linux-gnu.tar.gz
+            koala-rust-aarch64-unknown-linux-gnu.tar.gz
+            koala-rust-x86_64-apple-darwin.tar.gz
+            koala-rust-aarch64-apple-darwin.tar.gz
+            koala-rust-x86_64-pc-windows-msvc.tar.gz
+            vec0-x86_64-unknown-linux-gnu.so
+            vec0-aarch64-unknown-linux-gnu.so
+            vec0-x86_64-apple-darwin.dylib
+            vec0-aarch64-apple-darwin.dylib
+            vec0-x86_64-pc-windows-msvc.dll
           )
           missing=()
           for asset in "${expected[@]}"; do
@@ -159,21 +298,55 @@ jobs:
         if: steps.check_assets.outputs.has_assets == 'true'
         run: |
           cd release-assets
-          sha256sum koala-rust-* > SHA256SUMS.txt
+          sha256sum koala-rust-* vec0-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create Release
+      - name: Verify release tag still points to built commit
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-tag.outputs.commit_sha }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          actual_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "Tag $RELEASE_TAG moved from $EXPECTED_COMMIT to $actual_commit during the build." >&2
+            exit 1
+          fi
+
+      - name: Refuse to overwrite a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          error_file="$(mktemp)"
+          trap 'rm -f "$error_file"' EXIT
+          if is_draft="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.draft' 2>"$error_file")"; then
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $RELEASE_TAG is already published; refusing to overwrite it." >&2
+              exit 1
+            fi
+          elif grep -Eq 'HTTP 404|Not Found' "$error_file"; then
+            echo "No existing release for $RELEASE_TAG; a draft will be created."
+          else
+            cat "$error_file" >&2
+            exit 1
+          fi
+
+      - name: Upload draft release
         if: steps.check_assets.outputs.has_assets == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: koala-rust ${{ inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: true
           body: |
             ## koala-rust ${{ inputs.tag || github.ref_name }}
 
             **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
 
-            A single binary that gives any MCP-compatible agent: long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+            A self-contained platform bundle with the Koala executable and matching sqlite-vec extension. It gives any MCP-compatible agent long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
 
             ### 🙏 Attribution
 
@@ -187,29 +360,42 @@ jobs:
 
             ### Installation
 
-            **Binary (recommended):**
+            **Self-contained bundle (recommended):** Download the archive for your platform, then extract both the executable and its matching sqlite-vec library together.
+
             ```bash
             # Linux x86_64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-unknown-linux-gnu -o koala-rust
+            curl -fL https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-unknown-linux-gnu.tar.gz -o koala-rust.tar.gz
+            tar -xzf koala-rust.tar.gz
             chmod +x koala-rust
+            ./koala-rust --serve
 
             # Linux ARM64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-unknown-linux-gnu -o koala-rust
+            curl -fL https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-unknown-linux-gnu.tar.gz -o koala-rust.tar.gz
+            tar -xzf koala-rust.tar.gz
             chmod +x koala-rust
+            ./koala-rust --serve
 
-            # macOS x86_64 (Intel)
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-apple-darwin -o koala-rust
+            # macOS Intel
+            curl -fL https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-apple-darwin.tar.gz -o koala-rust.tar.gz
+            tar -xzf koala-rust.tar.gz
             chmod +x koala-rust
+            ./koala-rust --serve
 
-            # macOS ARM64 (Apple Silicon)
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-apple-darwin -o koala-rust
+            # macOS Apple Silicon
+            curl -fL https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-aarch64-apple-darwin.tar.gz -o koala-rust.tar.gz
+            tar -xzf koala-rust.tar.gz
             chmod +x koala-rust
+            ./koala-rust --serve
 
-            # Windows x86_64
-            curl -L https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-pc-windows-msvc.exe -o koala-rust.exe
+            # Windows x86_64 (PowerShell)
+            curl.exe -fL https://github.com/dbillion/koala-rust/releases/download/${{ inputs.tag || github.ref_name }}/koala-rust-x86_64-pc-windows-msvc.tar.gz -o koala-rust.tar.gz
+            tar -xzf koala-rust.tar.gz
+            .\\koala-rust.exe --serve
             ```
 
-            **Via Cargo:**
+            Raw executables and platform-specific sqlite-vec libraries are also published separately for advanced/manual installations.
+
+            **Via Cargo:** Source installs must also install a compatible sqlite-vec extension and set `KOALA_VEC0_PATH` to its full path.
             ```bash
             cargo install --git https://github.com/dbillion/koala-rust --tag ${{ inputs.tag || github.ref_name }}
             ```
@@ -230,20 +416,46 @@ jobs:
 
           files: |
             release-assets/*
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify uploaded assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ needs.resolve-tag.outputs.commit_sha }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          asset_count="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          if [[ "$asset_count" -ne 16 ]]; then
+            echo "Expected 16 release assets, found $asset_count" >&2
+            exit 1
+          fi
+          download_dir="$(mktemp -d)"
+          trap 'rm -rf "$download_dir"' EXIT
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$download_dir"
+          cmp release-assets/SHA256SUMS.txt "$download_dir/SHA256SUMS.txt"
+          (cd "$download_dir" && sha256sum -c SHA256SUMS.txt)
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          actual_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
+          if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "Tag $RELEASE_TAG moved before publication: expected $EXPECTED_COMMIT, found $actual_commit" >&2
+            exit 1
+          fi
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
   publish-cargo:
     name: Publish to crates.io (optional)
-    needs: release
+    needs: [release, resolve-tag]
     runs-on: ubuntu-latest
     if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+          ref: ${{ needs.resolve-tag.outputs.commit_sha }}
       - name: Publish to crates.io
         run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:

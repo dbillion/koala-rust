@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Fetch PR base for LOC allowlist check
         if: github.event_name == 'pull_request'
@@ -57,13 +59,13 @@ jobs:
         run: cargo fmt --check --all
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Type check
-        run: cargo check --all-targets
+        run: cargo check --locked --all-targets
 
       - name: Build (debug)
-        run: cargo build --all-targets
+        run: cargo build --locked --all-targets
 
       - name: Verify CLI, MCP, and SQLite snapshots
         env:
@@ -72,12 +74,26 @@ jobs:
         run: python3 tests/snapshot_baseline.py
 
       - name: Test
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
 
       - name: Verify binary
         run: |
-          cargo build --release
+          cargo build --locked --release
           ./target/release/koala-rust --help
+
+  msrv:
+    name: MSRV (Rust 1.91)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install minimum supported Rust
+        uses: dtolnay/rust-toolchain@1.91.0
+
+      - name: Check minimum supported Rust
+        run: cargo check --locked --all-targets
 
   cross-check:
     name: Cross-platform Check (${{ matrix.target }})
@@ -103,6 +119,8 @@ jobs:
             use_cross: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,8 +151,8 @@ jobs:
 
       - name: Cross build check
         if: matrix.use_cross
-        run: cross check --target ${{ matrix.target }}
+        run: cross check --locked --target ${{ matrix.target }}
 
       - name: Native build check
         if: "!matrix.use_cross"
-        run: cargo check --target ${{ matrix.target }}
+        run: cargo check --locked --target ${{ matrix.target }}

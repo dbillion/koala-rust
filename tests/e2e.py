@@ -2,7 +2,7 @@
 """End-to-end test: drives the MCP server over stdio (stdlib only).
 
 Needs the sqlite3 CLI and the sqlite-vec extension (KOALA_VEC0_PATH).
-Binary: KOALA_BIN, default target/debug/koala-dock.
+Binary: KOALA_BIN, default target/debug/koala-rust.
 Exit code 0 when every check passes.
 """
 import json
@@ -15,7 +15,7 @@ import tempfile
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BIN = os.environ.get("KOALA_BIN", os.path.join(ROOT, "target", "debug", "koala-dock"))
+BIN = os.environ.get("KOALA_BIN", os.path.join(ROOT, "target", "debug", "koala-rust"))
 VEC0 = os.environ.get("KOALA_VEC0_PATH", "/usr/local/lib/vec0.so")
 TMP = tempfile.mkdtemp(prefix="kbe2e-")
 results = []

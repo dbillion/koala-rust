@@ -13,10 +13,11 @@ Data stays in a SQLite file on your machine.
 ## Try it in two minutes
 
 ```sh
-# 1. get the binary and check it (Linux x86_64 shown; macOS and Windows assets are on the release page)
-gh release download v0.3.3 -R dbillion/koala-rust -p 'koala-rust-x86_64-unknown-linux-gnu' -p SHA256SUMS.txt
+# 1. download the self-contained bundle (Linux x86_64 shown)
+gh release download -R dbillion/koala-rust -p 'koala-rust-x86_64-unknown-linux-gnu.tar.gz' -p SHA256SUMS.txt
 sha256sum -c --ignore-missing SHA256SUMS.txt
-mv koala-rust-x86_64-unknown-linux-gnu koala-rust && chmod +x koala-rust
+tar -xzf koala-rust-x86_64-unknown-linux-gnu.tar.gz
+chmod +x koala-rust
 
 # 2. CLI: versioned facts (uses a throwaway state dir, your real ~/.koala is untouched)
 sh examples/cli_demo.sh ./koala-rust
@@ -273,30 +274,34 @@ flowchart TB
 
 ## 🚀 Quick Start
 
-### Install (Binary)
+### Install (Self-contained release bundle)
 
-Release assets are named by target, so pick yours:
+Choose the archive matching your platform from [GitHub Releases](https://github.com/dbillion/koala-rust/releases). Each archive contains the Koala executable and its matching `sqlite-vec` loadable extension (`vec0.so`, `vec0.dylib`, or `vec0.dll`). **v0.3.3 and earlier do not include these bundles**; for those versions, install a compatible extension separately and set `KOALA_VEC0_PATH`.
 
-| Platform | Asset |
+| Platform | Release archive |
 |---|---|
-| Linux x86_64 | `koala-rust-x86_64-unknown-linux-gnu` |
-| Linux arm64 | `koala-rust-aarch64-unknown-linux-gnu` |
-| macOS Intel | `koala-rust-x86_64-apple-darwin` |
-| macOS Apple Silicon | `koala-rust-aarch64-apple-darwin` |
-| Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.exe` |
+| Linux x86_64 | `koala-rust-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux ARM64 | `koala-rust-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS Intel | `koala-rust-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `koala-rust-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.tar.gz` |
+
+Example for Linux x86_64:
 
 ```bash
-# Example: Linux x86_64, with checksum check
-curl -LO https://github.com/dbillion/koala-rust/releases/latest/download/koala-rust-x86_64-unknown-linux-gnu
-curl -LO https://github.com/dbillion/koala-rust/releases/latest/download/SHA256SUMS.txt
+curl -fL https://github.com/dbillion/koala-rust/releases/latest/download/koala-rust-x86_64-unknown-linux-gnu.tar.gz -o koala-rust.tar.gz
+curl -fL https://github.com/dbillion/koala-rust/releases/latest/download/SHA256SUMS.txt -o SHA256SUMS.txt
 sha256sum -c --ignore-missing SHA256SUMS.txt
-mv koala-rust-x86_64-unknown-linux-gnu koala-rust && chmod +x koala-rust
-
-# Or via cargo
-cargo install --git https://github.com/dbillion/koala-rust
+tar -xzf koala-rust.tar.gz
+chmod +x koala-rust
+./koala-rust --serve
 ```
 
-> The earlier command `.../koala-rust-$(uname -s)-$(uname -m)` returns HTTP 404 because no asset has that name.
+Keep the executable and its adjacent `vec0.*` library together. For source/Cargo installs, install a compatible sqlite-vec extension separately and set `KOALA_VEC0_PATH` to its full path:
+
+```bash
+cargo install --git https://github.com/dbillion/koala-rust
+```
 
 ### Run MCP Server
 
@@ -519,7 +524,7 @@ After restart, agents get 3 tools:
 
 ### Prerequisites
 
-- Rust 1.78+ (MSRV)
+- Rust 1.91+ (MSRV)
 - `sqlite3` dev headers
 - `pkg-config`
 
