@@ -259,6 +259,19 @@ jobs:
           sha256sum koala-rust-* vec0-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Refuse to overwrite a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $RELEASE_TAG is already published; refusing to overwrite it." >&2
+              exit 1
+            fi
+          fi
+
       - name: Upload draft release
         if: steps.check_assets.outputs.has_assets == 'true'
         uses: softprops/action-gh-release@v2
