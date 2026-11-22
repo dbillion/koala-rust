@@ -1,0 +1,1090 @@
+[
+  {
+    "description": "Database diagnostics",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "health"
+  },
+  {
+    "description": "Write a fact",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "write_fact"
+  },
+  {
+    "description": "Read a fact",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "read_fact"
+  },
+  {
+    "description": "List facts",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_facts"
+  },
+  {
+    "description": "Fact versions",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "read_fact_versions"
+  },
+  {
+    "description": "Delete fact",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "delete_fact"
+  },
+  {
+    "description": "Delete facts by prefix",
+    "inputSchema": {
+      "properties": {
+        "prefix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix"
+      ],
+      "type": "object"
+    },
+    "name": "delete_fact_prefix"
+  },
+  {
+    "description": "Create entity",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "create_entities"
+  },
+  {
+    "description": "Add observations",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "observations"
+      ],
+      "type": "object"
+    },
+    "name": "add_observations"
+  },
+  {
+    "description": "Open entities",
+    "inputSchema": {
+      "properties": {
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "names"
+      ],
+      "type": "object"
+    },
+    "name": "open_nodes"
+  },
+  {
+    "description": "Search nodes",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_nodes"
+  },
+  {
+    "description": "Create relation",
+    "inputSchema": {
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "type"
+      ],
+      "type": "object"
+    },
+    "name": "create_relations"
+  },
+  {
+    "description": "Create task",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "create_task_or_note"
+  },
+  {
+    "description": "Query tasks",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "search": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "query_tasks"
+  },
+  {
+    "description": "Update task",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "update_task"
+  },
+  {
+    "description": "Init model",
+    "inputSchema": {
+      "properties": {
+        "activation": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "integer"
+        },
+        "lr": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "name": "model_init"
+  },
+  {
+    "description": "Train model",
+    "inputSchema": {
+      "properties": {
+        "lr": {
+          "type": "number"
+        },
+        "steps": {
+          "type": "integer"
+        },
+        "targets": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "xs": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "ys": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "xs",
+        "ys",
+        "targets"
+      ],
+      "type": "object"
+    },
+    "name": "model_train"
+  },
+  {
+    "description": "Predict",
+    "inputSchema": {
+      "properties": {
+        "xs": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "ys": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "xs",
+        "ys"
+      ],
+      "type": "object"
+    },
+    "name": "model_predict"
+  },
+  {
+    "description": "Model status",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "model_status"
+  },
+  {
+    "description": "Feedback",
+    "inputSchema": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "signal": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "signal",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "name": "feedback"
+  },
+  {
+    "description": "Explain rank",
+    "inputSchema": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "explain_rank"
+  },
+  {
+    "description": "Sequential thinking",
+    "inputSchema": {
+      "properties": {
+        "next_step": {
+          "type": "integer"
+        },
+        "step": {
+          "type": "integer"
+        },
+        "thought": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step",
+        "thought",
+        "next_step"
+      ],
+      "type": "object"
+    },
+    "name": "sequential_thinking"
+  },
+  {
+    "description": "Add conclusion",
+    "inputSchema": {
+      "properties": {
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "type": "object"
+    },
+    "name": "conclusion"
+  },
+  {
+    "description": "Get thought history",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "name": "thought_history"
+  },
+  {
+    "description": "Reset thought history",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "thought_reset"
+  },
+  {
+    "description": "Save model",
+    "inputSchema": {
+      "properties": {
+        "step": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "name": "model_save"
+  },
+  {
+    "description": "Load model",
+    "inputSchema": {
+      "properties": {
+        "step": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "name": "model_load"
+  },
+  {
+    "description": "Upsert fact embedding",
+    "inputSchema": {
+      "properties": {
+        "embedding": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "fact_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fact_id",
+        "embedding"
+      ],
+      "type": "object"
+    },
+    "name": "vector_upsert_fact"
+  },
+  {
+    "description": "Upsert entity embedding",
+    "inputSchema": {
+      "properties": {
+        "embedding": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "entity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entity_id",
+        "embedding"
+      ],
+      "type": "object"
+    },
+    "name": "vector_upsert_entity"
+  },
+  {
+    "description": "Search facts by vector similarity",
+    "inputSchema": {
+      "properties": {
+        "filter": {
+          "type": "string"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "query_embedding": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "query_embedding",
+        "k"
+      ],
+      "type": "object"
+    },
+    "name": "vector_search_facts"
+  },
+  {
+    "description": "Search entities by vector similarity",
+    "inputSchema": {
+      "properties": {
+        "k": {
+          "type": "integer"
+        },
+        "query_embedding": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "query_embedding",
+        "k"
+      ],
+      "type": "object"
+    },
+    "name": "vector_search_entities"
+  },
+  {
+    "description": "Delete fact embedding",
+    "inputSchema": {
+      "properties": {
+        "fact_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fact_id"
+      ],
+      "type": "object"
+    },
+    "name": "vector_delete_fact"
+  },
+  {
+    "description": "Delete entity embedding",
+    "inputSchema": {
+      "properties": {
+        "entity_id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entity_id"
+      ],
+      "type": "object"
+    },
+    "name": "vector_delete_entity"
+  },
+  {
+    "description": "Write fact with CRDT sync",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "sync_write_fact"
+  },
+  {
+    "description": "Read fact from sync",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "sync_read_fact"
+  },
+  {
+    "description": "List facts from sync",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "sync_list_facts"
+  },
+  {
+    "description": "Create entity with CRDT sync",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "sync_create_entity"
+  },
+  {
+    "description": "Get pending sync changes",
+    "inputSchema": {
+      "properties": {
+        "doc_type": {
+          "enum": [
+            "facts",
+            "entities",
+            "relations",
+            "tasks",
+            "thoughts",
+            "model"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_type"
+      ],
+      "type": "object"
+    },
+    "name": "sync_get_changes"
+  },
+  {
+    "description": "Merge changes from peer",
+    "inputSchema": {
+      "properties": {
+        "changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "doc_type": {
+          "enum": [
+            "facts",
+            "entities",
+            "relations",
+            "tasks",
+            "thoughts",
+            "model"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_type",
+        "changes"
+      ],
+      "type": "object"
+    },
+    "name": "sync_merge_changes"
+  },
+  {
+    "description": "Write a fact and embed it for semantic search in one call",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "remember_semantic"
+  },
+  {
+    "description": "Semantic + keyword search over facts. Returns name, text and score (lower is better)",
+    "inputSchema": {
+      "properties": {
+        "k": {
+          "default": 5,
+          "type": "integer"
+        },
+        "keyword_weight": {
+          "default": 0.15,
+          "type": "number"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "recall"
+  },
+  {
+    "description": "Re-embed all current facts (after changing embedding model)",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "reindex_facts"
+  },
+  {
+    "description": "Generate embedding for text",
+    "inputSchema": {
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "name": "embed_text"
+  },
+  {
+    "description": "Generate embeddings for multiple texts",
+    "inputSchema": {
+      "properties": {
+        "texts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "texts"
+      ],
+      "type": "object"
+    },
+    "name": "embed_batch"
+  },
+  {
+    "description": "Load a plugin",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "plugin_load"
+  },
+  {
+    "description": "Call a plugin tool",
+    "inputSchema": {
+      "properties": {
+        "args": {
+          "type": "object"
+        },
+        "plugin": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin",
+        "tool",
+        "args"
+      ],
+      "type": "object"
+    },
+    "name": "plugin_call"
+  },
+  {
+    "description": "List loaded plugins",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "plugin_list"
+  },
+  {
+    "description": "Discover and load plugins from directories",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "plugin_discover"
+  },
+  {
+    "description": "Search plugins in registry",
+    "inputSchema": {
+      "properties": {
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "plugin_search"
+  },
+  {
+    "description": "Install a plugin from registry",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "plugin_install"
+  },
+  {
+    "description": "Uninstall a plugin",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "plugin_uninstall"
+  },
+  {
+    "description": "Get registry statistics",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "plugin_registry_stats"
+  },
+  {
+    "description": "Update registry from remote",
+    "inputSchema": {
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "plugin_update_registry"
+  },
+  {
+    "description": "Retrieve current user working profile, preferences, and user facts",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_user_context"
+  },
+  {
+    "description": "Retrieve project architecture, decisions, latest handoff, and open tasks",
+    "inputSchema": {
+      "properties": {
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "get_project_context"
+  },
+  {
+    "description": "Full session bootstrap combining user profile and project context",
+    "inputSchema": {
+      "properties": {
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
+    },
+    "name": "bootstrap_context"
+  },
+  {
+    "description": "Record an architectural or technical decision for a project",
+    "inputSchema": {
+      "properties": {
+        "decision": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "name": "record_decision"
+  },
+  {
+    "description": "Update project status, blockers, and next step",
+    "inputSchema": {
+      "properties": {
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "next_step": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "status"
+      ],
+      "type": "object"
+    },
+    "name": "update_project_status"
+  },
+  {
+    "description": "Create and persist an immutable handoff checkpoint when concluding or switching",
+    "inputSchema": {
+      "properties": {
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "next_step": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "summary",
+        "next_step"
+      ],
+      "type": "object"
+    },
+    "name": "create_handoff"
+  },
+  {
+    "description": "Search memory across facts and handoffs with optional project filter",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "project": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_memory"
+  }
+]

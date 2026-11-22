@@ -16,6 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch PR base for LOC allowlist check
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+
+      - name: Enforce Rust file length
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            scripts/check_loc.sh FETCH_HEAD
+          else
+            scripts/check_loc.sh
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,6 +42,17 @@ jobs:
             target
           key: ci-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Download pinned sqlite-vec for contract snapshots
+        run: |
+          curl --fail --location --silent --show-error \
+            --connect-timeout 20 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors \
+            https://github.com/asg017/sqlite-vec/releases/download/v0.1.10-alpha.4/sqlite-vec-0.1.10-alpha.4-loadable-linux-x86_64.tar.gz \
+            --output sqlite-vec.tar.gz
+          echo "0349d1cffea2da145eb195ee0fa0e7803544a9491a458c58aeacfb434517abf1  sqlite-vec.tar.gz" | sha256sum --check
+          mkdir -p sqlite-vec
+          tar -xzf sqlite-vec.tar.gz -C sqlite-vec
+          cp sqlite-vec/vec0.so vec0.so
+
       - name: Format check
         run: cargo fmt --check --all
 
@@ -41,6 +64,12 @@ jobs:
 
       - name: Build (debug)
         run: cargo build --all-targets
+
+      - name: Verify CLI, MCP, and SQLite snapshots
+        env:
+          KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
+          KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+        run: python3 tests/snapshot_baseline.py
 
       - name: Test
         run: cargo test --all-targets
