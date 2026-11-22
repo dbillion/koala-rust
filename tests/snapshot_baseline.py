@@ -10,7 +10,6 @@ import re
 import selectors
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -42,7 +41,7 @@ def environment(state_dir):
     env = os.environ.copy()
     env["KOALA_STATE_DIR"] = str(state_dir)
     env["KOALA_VEC0_PATH"] = str(VEC0)
-    hf_home = Path(os.environ.get("KOALA_SNAPSHOT_HF_HOME", state_dir / "hf"))
+    hf_home = state_dir / "hf"
     env["HF_HOME"] = str(hf_home)
     env["HF_HUB_CACHE"] = str(hf_home / "hub")
     env["HUGGINGFACE_HUB_CACHE"] = str(hf_home / "hub")
@@ -133,14 +132,18 @@ def command_help():
         return found
 
     result = {}
+    help_env = os.environ.copy()
+    help_env.pop("KOALA_STATE_DIR", None)
     root_help = subprocess.run(
-        [str(BINARY), "--help"], check=True, capture_output=True, text=True, timeout=30
+        [str(BINARY), "--help"], check=True, capture_output=True, text=True,
+        timeout=30, env=help_env,
     )
     for command in names(root_help.stdout):
         if command == "help":
             continue
         help_result = subprocess.run(
-            [str(BINARY), command, "--help"], check=True, capture_output=True, text=True, timeout=30
+            [str(BINARY), command, "--help"], check=True, capture_output=True, text=True,
+            timeout=30, env=help_env,
         )
         result[command] = help_result.stdout
         if command == "context":
@@ -149,7 +152,7 @@ def command_help():
                     continue
                 nested = subprocess.run(
                     [str(BINARY), "context", action, "--help"],
-                    check=True, capture_output=True, text=True, timeout=30,
+                    check=True, capture_output=True, text=True, timeout=30, env=help_env,
                 )
                 result[f"context {action}"] = nested.stdout
     result["<root>"] = root_help.stdout
