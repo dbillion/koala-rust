@@ -80,13 +80,13 @@ jobs:
           ./target/release/koala-rust --help
 
   msrv:
-    name: MSRV (Rust 1.89)
+    name: MSRV (Rust 1.91)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install minimum supported Rust
-        uses: dtolnay/rust-toolchain@1.89.0
+        uses: dtolnay/rust-toolchain@1.91.0
 
       - name: Check minimum supported Rust
         run: cargo check --locked --all-targets

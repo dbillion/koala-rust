@@ -10,7 +10,7 @@ keywords = ["mcp", "memory", "sqlite", "crdt", "wasm"]
 categories = ["command-line-utilities", "database", "embedded", "wasm"]
 readme = "README.md"
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugins/**/*"]
-rust-version = "1.89"
+rust-version = "1.91"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
