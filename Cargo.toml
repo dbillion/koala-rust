@@ -10,7 +10,7 @@ keywords = ["mcp", "memory", "sqlite", "crdt", "wasm"]
 categories = ["command-line-utilities", "database", "embedded", "wasm"]
 readme = "README.md"
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugins/**/*"]
-rust-version = "1.81"
+rust-version = "1.86"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -37,8 +37,7 @@ model2vec-rs = "0.4"
 tokenizers = "0.19"
 
 # v0.5: Plugin system
-wasmtime = "24.0"
-wasmtime-wasi = "24.0"
+wasmtime = "36.0.19"
 libloading = "0.8"
 
 # Utilities

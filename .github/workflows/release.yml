@@ -199,6 +199,9 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: koala-release-${{ inputs.tag || github.ref_name }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -256,12 +259,13 @@ jobs:
           sha256sum koala-rust-* vec0-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create Release
+      - name: Upload draft release
         if: steps.check_assets.outputs.has_assets == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: koala-rust ${{ inputs.tag || github.ref_name }}
+          fail_on_unmatched_files: true
           body: |
             ## koala-rust ${{ inputs.tag || github.ref_name }}
 
@@ -337,10 +341,28 @@ jobs:
 
           files: |
             release-assets/*
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify uploaded assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          asset_count="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          if [[ "$asset_count" -ne 16 ]]; then
+            echo "Expected 16 release assets, found $asset_count" >&2
+            exit 1
+          fi
+          download_dir="$(mktemp -d)"
+          trap 'rm -rf "$download_dir"' EXIT
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$download_dir"
+          cmp release-assets/SHA256SUMS.txt "$download_dir/SHA256SUMS.txt"
+          (cd "$download_dir" && sha256sum -c SHA256SUMS.txt)
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
   publish-cargo:
     name: Publish to crates.io (optional)
