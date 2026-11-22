@@ -98,7 +98,9 @@ impl Database {
 
         // Create pool with sqlite-vec extension loaded on every connection
         let db_url = format!("sqlite://{}?mode=rwc", abs_path.display());
-        let connect_opts = SqliteConnectOptions::from_str(&db_url)?.extension(vec0_path());
+        // Raw release assets include the target in their filename, so do not infer the entry point.
+        let connect_opts = SqliteConnectOptions::from_str(&db_url)?
+            .extension_with_entrypoint(vec0_path(), "sqlite3_vec_init");
         let pool = SqlitePool::connect_with(connect_opts).await?;
 
         let db = Self { pool };

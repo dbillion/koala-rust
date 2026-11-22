@@ -179,10 +179,11 @@ jobs:
             echo "System vec0.so would mask bundled-library discovery" >&2
             exit 1
           fi
-          python tests/release_smoke.py "$PWD/bundle/$binary"
+          raw_extension="artifacts/vec0-${{ matrix.target }}.$extension"
+          cp "bundle/vec0.$extension" "$raw_extension"
+          python tests/release_smoke.py "$PWD/bundle/$binary" "$PWD/$raw_extension"
 
           cp "bundle/$binary" "artifacts/${{ matrix.artifact }}"
-          cp "bundle/vec0.$extension" "artifacts/vec0-${{ matrix.target }}.$extension"
           tar -czf "artifacts/koala-rust-${{ matrix.target }}.tar.gz" \
             -C bundle "$binary" "vec0.$extension" "licenses/sqlite-vec"
           tar -tzf "artifacts/koala-rust-${{ matrix.target }}.tar.gz"
