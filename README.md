@@ -1,174 +1,231 @@
-# koala-rust
+<h1 align="center">🐨 koala-rust</h1>
 
-Local, private memory for AI agents. One small binary that speaks MCP over stdio.
-Versioned facts, semantic recall, knowledge graph, tasks, handoff notes, sync and WASM plugins.
-Data stays in a SQLite file on your machine.
+<p align="center">
+  <b>The memory your AI agents keep.</b><br>
+  One small binary. One SQLite file you own. Works with any MCP agent.
+</p>
 
-> **Status (v0.3.4): useful for pilots and personal or team agent memory. Not yet ready for
-> regulated production data.** There is no encryption at rest, no access control, no tamper-evident
-> audit log and no certification. See [Readiness](#readiness-for-health-finance-and-defense) and the
-> [open issues](https://github.com/dbillion/koala-rust/issues). Every number below was measured on
-> the v0.3.3 Linux x86_64 release binary on 22 Nov 2026 unless marked otherwise.
+<p align="center">
+  <a href="https://github.com/dbillion/koala-rust/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/dbillion/koala-rust"></a>
+  <a href="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-orange.svg">
+  <a href="https://github.com/dbillion/koala-rust/labels/good%20first%20issue"><img alt="Good first issues" src="https://img.shields.io/github/issues/dbillion/koala-rust/good%20first%20issue?label=good%20first%20issues&color=7057ff"></a>
+  <a href="https://github.com/dbillion/koala-rust/labels/help%20wanted"><img alt="Help wanted" src="https://img.shields.io/github/issues/dbillion/koala-rust/help%20wanted?label=help%20wanted&color=008672"></a>
+</p>
 
-## Try it in two minutes
+Your agent forgets everything when the chat ends. koala-rust gives it a memory that **lasts across
+sessions, understands meaning, remembers what changed, and never leaves your machine**.
 
-```sh
-# 1. download the self-contained bundle (Linux x86_64 shown)
-gh release download -R dbillion/koala-rust -p 'koala-rust-x86_64-unknown-linux-gnu.tar.gz' -p SHA256SUMS.txt
-sha256sum -c --ignore-missing SHA256SUMS.txt
-tar -xzf koala-rust-x86_64-unknown-linux-gnu.tar.gz
-chmod +x koala-rust
-
-# 2. CLI: versioned facts (uses a throwaway state dir, your real ~/.koala is untouched)
-sh examples/cli_demo.sh ./koala-rust
-
-# 3. MCP + semantic recall, with one health and one finance sample (needs python3, no packages)
-python3 examples/demo.py ./koala-rust
-```
-
-Expected output of step 3 (made-up sample data):
-
-```
+```text
+$ python3 examples/demo.py ./koala-rust
 MCP tools: 60
-stored health/cardio  1.14s      <- first call loads the model
+stored health/cardio   1.14s     (first call loads the model)
+stored finance/desk    0.00s
+
 Q: which medicines are unsafe with blood thinners
  -> health/cardio: Patient on warfarin, avoid NSAIDs due to bleeding risk
+
 Q: which companies can traders not touch
  -> finance/desk: Equity desk restricted list includes ACME Corp until merger closes
+
 Process memory: 52 MB
 ```
 
-The question and the stored text share no key words. The match comes from local embeddings.
+The questions share no words with the stored notes. The match comes from small local embeddings.
+No cloud, no API key, no language-model call.
 
-Use it from Claude Desktop, Claude Code, Cursor or any MCP client:
+## Why you might like it
+
+- **Nothing to run but one binary.** No Postgres, no vector database, no account. Memory is a single SQLite file.
+- **It understands meaning.** Search by what you mean, not just keywords.
+- **It remembers history.** Every change to a fact is a numbered, timestamped version.
+- **It plugs into your tools.** 60 MCP tools over stdio for Claude Desktop, Claude Code, Cursor and any MCP client.
+- **It is small and quick.** 15 to 24 MB binary, 18 MB of RAM idle, about 10 ms to write and embed a fact.
+- **It grows with you.** Knowledge graph, tasks, handoff notes between sessions, multi-agent sync and WASM plugins.
+
+## Get started in 60 seconds
+
+**1. Download** the binary for your system from the [latest release](https://github.com/dbillion/koala-rust/releases/latest).
+
+| Platform | Asset |
+|---|---|
+| Linux x86_64 / arm64 | `koala-rust-x86_64-unknown-linux-gnu` / `koala-rust-aarch64-unknown-linux-gnu` |
+| macOS Intel / Apple Silicon | `koala-rust-x86_64-apple-darwin` / `koala-rust-aarch64-apple-darwin` |
+| Windows | `koala-rust-x86_64-pc-windows-msvc.exe` |
+
+```sh
+# Linux x86_64 example, with checksum check
+curl -LO https://github.com/dbillion/koala-rust/releases/latest/download/koala-rust-x86_64-unknown-linux-gnu
+curl -LO https://github.com/dbillion/koala-rust/releases/latest/download/SHA256SUMS.txt
+sha256sum -c --ignore-missing SHA256SUMS.txt
+mv koala-rust-x86_64-unknown-linux-gnu koala-rust && chmod +x koala-rust
+```
+
+**2. Add it to your agent** (any MCP client, same stanza):
 
 ```json
 { "mcpServers": { "koala": { "command": "/path/to/koala-rust", "args": ["--serve"] } } }
 ```
 
-## Space it takes
+**3. Ask your agent** to "remember that we chose SQLite for storage", then ask in a new chat what you decided.
+
+**Prefer to poke at it first?** Both examples use a throwaway folder, so your real data is untouched:
+
+```sh
+sh examples/cli_demo.sh ./koala-rust     # versioned facts from the command line
+python3 examples/demo.py ./koala-rust    # semantic recall over MCP, no packages needed
+```
+
+## What you can build with it
+
+| Idea | How koala-rust helps |
+|---|---|
+| **A coding agent that remembers** | Handoff notes, decisions and project status carry over between sessions (`create_handoff`, `record_decision`, `bootstrap_context`). |
+| **A personal knowledge assistant** | Store notes, ask in your own words, see how a fact changed over time. |
+| **A team of agents with shared memory** | Agents sync facts and a knowledge graph between machines (`sync-push`, `sync-pull`). |
+| **A clinic or hospital copilot** *(pilots today, hardening in progress)* | Memory stays on the premises and recall works from meaning. See the roadmap. |
+| **An analyst or advisor copilot** *(pilots today, hardening in progress)* | Local notes with exact version history and a path to point-in-time recall. See the roadmap. |
+| **Edge and offline agents** *(early)* | Small footprint and no network needed once the model is cached. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    A["AI agent<br/>(Claude, Cursor, your own)"] <-->|MCP over stdio| K
+    subgraph K["koala-rust (one binary)"]
+        direction TB
+        F[Facts + versions]
+        V[Semantic search]
+        G[Graph + tasks]
+        P[WASM plugins]
+        S[Multi-agent sync]
+    end
+    K --> D[("koala.db<br/>one SQLite file")]
+    V -.->|local embeddings| M["small model<br/>(~30 MB, cached once)"]
+```
+
+The full architecture diagram is in the [reference guide](#architecture) below.
+
+## How it compares
+
+Every tool here has real strengths. This is a quick map of the trade-offs, not a ranking.
+Competitor facts come from vendor pages and comparison posts (Nov 2026) and are not independently
+verified. Please correct anything that is out of date.
+
+| | koala-rust | Mem0 | Letta | Zep / Graphiti | Cognee | Dakera |
+|---|---|---|---|---|---|---|
+| Shape | Single binary + SQLite | Library + cloud | Full agent runtime | Temporal knowledge graph | Graph pipeline | Single Rust binary |
+| License | MIT | Apache 2.0 | Apache 2.0 | Graphiti Apache 2.0, cloud closed | Apache 2.0 | MIT open-core |
+| Offline | Yes, once model cached | Limited | Yes | Library, needs graph DB | Yes | Yes |
+| Extra services | None | Vector DB (self-host) | Postgres or SQLite | Neo4j, FalkorDB or Neptune | Optional DBs | None |
+| Write path | Local embedding only | LLM extraction per add | LLM tool calls | Graph extraction | LLM pipeline | Local embedding |
+| Footprint | 15 to 24 MB, 18 to 52 MB RAM | n/s | n/s | n/s | n/s | about 101 MB binary |
+| Managed price | Free | $19 to $249 / mo | $20 / mo + usage | $125 to $375 / mo | usage based | no cloud |
+
+`n/s` = not stated by the sources we found. koala-rust numbers were measured on the v0.3.3 Linux
+x86_64 release binary: 18 MB idle, 52 MB after the model loads, about 30 MB one-time model download,
+10 ms write plus embed, 20 to 40 ms recall on a small store. Large-store benchmarks are
+[an open task](https://github.com/dbillion/koala-rust/issues/37).
+
+<details>
+<summary><b>Footprint measurements</b> (v0.3.3, Linux x86_64, Nov 2026)</summary>
 
 | Item | Measured |
 |---|---|
 | Binary | 14.9 MB (macOS arm64), 16.3 MB (Windows), 21.5 MB (Linux arm64), 24.4 MB (Linux x86_64) |
-| Memory, server idle | 18 MB |
-| Memory, after embedding model is loaded | 52 MB |
-| Embedding model (one-time download from Hugging Face) | about 30 MB (`potion-base-8M`, 256 dimensions) |
-| Database with 3 facts and vector tables | about 1.2 MB (184 KB without vector tables) |
-| Write plus embed, after model load | about 10 ms |
-| Semantic recall on a 3-fact store | about 20 to 40 ms |
-| Needs network after the model is cached | No. Verified by running the demo under `unshare -n` |
+| Memory, server idle / after model load | 18 MB / 52 MB |
+| Embedding model (one-time download) | about 30 MB (`potion-base-8M`, 256 dimensions) |
+| Database with 3 facts and vector tables | about 1.2 MB |
+| Write plus embed / semantic recall (small store) | about 10 ms / 20 to 40 ms |
+| Needs network after the model is cached | No (checked by running the demo under `unshare -n`) |
+</details>
 
-Not measured: large stores. Benchmarks at 1k, 10k and 100k facts are still to do.
+<details>
+<summary><b>What it is worth in money</b></summary>
 
-## Where the gap is
+The direct saving today is software fees you stop paying. Managed memory list prices per workspace
+(Nov 2026 research, verify before relying on them): Mem0 $228 to $2,988 a year, Zep $1,500 to $4,500,
+Letta about $240. koala-rust is MIT licensed, so you pay only for your own machine. Tools that call a
+language model on every write also add a token cost per write, which koala-rust does not.
+The bigger prize, memory for regulated teams, depends on the roadmap below. Compliance
+(SOC 2, HIPAA) is about organisations and process, not a binary, and this project does not
+reduce that cost. Not legal advice.
+</details>
 
-Most agent memory products are cloud services or need a vector or graph database next to them.
-Some run a language-model call on every write. koala-rust is a different trade:
+## Where it is today, and where it is going
 
-- **One file to run, one file of data.** No Postgres, no Neo4j, no vector service.
-- **No language-model call on write.** Embeddings come from a small local static model, so writes are fast and have no per-write token cost.
-- **Exact history.** Every change to a fact is a numbered version with a timestamp.
-- **Speaks MCP natively.** 60 tools, works with agents you already use.
+koala-rust is **pre-1.0**. It is solid for personal and team agent memory and for pilots on
+non-sensitive data. The next goal is to make it trustworthy for sensitive work in **healthcare and
+finance** first, with **defense** and air-gapped edge use after that. Every step is an open issue
+you can pick up, and each has a clear "done when".
 
-Be honest about the limits: "local and offline" alone is not unique (see table). The aim is to
-be the smallest local option and, once the issues below land, the one with provable history,
-verified deletion and a tamper-evident audit trail.
-
-## Comparison with current tools
-
-Competitor facts come from vendor pages and comparison blog posts gathered in Nov 2026.
-They are not independently verified. Check prices and claims before you decide.
-
-| | koala-rust | Mem0 | Letta | Zep / Graphiti | Cognee | Dakera |
-|---|---|---|---|---|---|---|
-| Shape | Single binary, SQLite | Library plus cloud | Full agent runtime | Temporal knowledge graph | Graph pipeline | Single Rust binary |
-| License | MIT | Apache 2.0 | Apache 2.0 | Graphiti Apache 2.0, Zep cloud closed | Apache 2.0 | MIT open-core |
-| Offline / air-gapped | Yes, once model cached | Limited, needs local LLM setup | Yes | Library only, needs graph DB | Yes | Yes |
-| Extra services to run | None | Vector DB for self-host | Postgres or SQLite | Neo4j, FalkorDB or Neptune | Optional graph/vector DBs | None |
-| Write path | Local embedding only | LLM extraction per add | LLM tool calls | Graph extraction | Multi-stage LLM pipeline | Local embedding |
-| Footprint | 15 to 24 MB binary, 18 to 52 MB RAM | Not stated | Not stated | Not stated | Not stated | about 101 MB binary |
-| Encryption at rest | **No** | Not stated | Not stated | Cloud | Yes (stated) | AES-256-GCM (stated) |
-| Compliance claims | **None** | SOC 2 Type I, "HIPAA ready" | Enterprise SSO | SOC 2 Type II, HIPAA BAA (cloud) | GDPR-oriented | Not stated |
-| List price (managed) | Free | $19 to $249 / month | $20 / month and usage | $125 to $375 / month | usage based | No cloud |
-
-## What it is worth in money
-
-Honest version: today the direct, countable saving is **software fees you stop paying**. It is
-real but modest. The larger value (selling into regulated teams) depends on the open issues.
-
-**Managed memory list prices, per workspace (Nov 2026 research, verify before relying on them):**
-
-| Service and plan | Per month | Per year |
+| Theme | What is coming | Start here |
 |---|---|---|
-| Mem0 Starter / Pro | $19 / $249 | $228 / $2,988 |
-| Zep Flex / Flex Plus | $125 / $375 | $1,500 / $4,500 |
-| Letta Pro | $20 | $240 |
-| koala-rust | $0 licence | $0 licence, you pay for your own machine |
+| **Forget for real** | Delete every version of a fact, its vectors and its bytes; retention rules | [#11](https://github.com/dbillion/koala-rust/issues/11) · [#12](https://github.com/dbillion/koala-rust/issues/12) |
+| **Know what it knew** | Point-in-time recall (`--as-of`), tamper-evident audit log | [#13](https://github.com/dbillion/koala-rust/issues/13) · [#15](https://github.com/dbillion/koala-rust/issues/15) |
+| **Protect the data** | Encryption at rest, access labels and tenant namespaces | [#14](https://github.com/dbillion/koala-rust/issues/14) · [#16](https://github.com/dbillion/koala-rust/issues/16) |
+| **Trust the plugins** | Required checksums, signatures, sandbox limits, native plugins off by default | [#17](https://github.com/dbillion/koala-rust/issues/17) · [#29](https://github.com/dbillion/koala-rust/issues/29) |
+| **Run anywhere** | True offline build, safe migrations and backup | [#18](https://github.com/dbillion/koala-rust/issues/18) · [#20](https://github.com/dbillion/koala-rust/issues/20) |
+| **Easy to adopt** | CLI recall, Python adapters, tested setup for every MCP client, demo recording | [#22](https://github.com/dbillion/koala-rust/issues/22) · [#23](https://github.com/dbillion/koala-rust/issues/23) · [#35](https://github.com/dbillion/koala-rust/issues/35) · [#34](https://github.com/dbillion/koala-rust/issues/34) |
+| **Healthy codebase** | Split big files into small modules, more tests, benchmarks | [#19](https://github.com/dbillion/koala-rust/issues/19) · [#21](https://github.com/dbillion/koala-rust/issues/21) · [#37](https://github.com/dbillion/koala-rust/issues/37) |
+| **Sector guides** | Healthcare, finance, then defense deployment notes | [#25](https://github.com/dbillion/koala-rust/issues/25) · [#26](https://github.com/dbillion/koala-rust/issues/26) · [#27](https://github.com/dbillion/koala-rust/issues/27) |
 
-So a team running one workspace avoids roughly **$0.2k to $4.5k a year** at list price.
-Savings grow with the number of workspaces and agents.
+Until the first themes land, please keep secrets and real patient, financial or classified data
+out of it. Details by sector are below.
 
-**Second saving, not quantified:** services that call a language model on every write
-(Mem0, Cognee, Zep ingestion) add a token cost per write. koala-rust does not.
-Estimate for your own load: `writes per month x your cost of one extraction call`.
+<details>
+<summary><b>Readiness by sector (healthcare, finance, defense last)</b></summary>
 
-**What this does not save you.** koala-rust does not reduce compliance cost. If your company
-needs SOC 2 or a HIPAA programme, budget for it yourself. Rough small-vendor ranges from the same
-research: SOC 2 audit $3k to $40k, compliance platform $7.5k to $20k a year, penetration test
-$5k to $15k, HIPAA risk assessment $2k to $5k, about $25k to $80k+ in year one. Not legal advice.
-
-**Where larger value could come from, once the work is done:** keeping agent memory inside your own
-network can shorten the vendor-review step in health and finance, because no third party holds the
-data. That only holds if you can show encryption, access control, deletion and audit, which are
-the open issues.
-
-## Readiness for health, finance and defense
-
-| Capability | Status | Tracking |
+| Capability | Today | Tracking |
 |---|---|---|
-| Runs fully on your own machine, no cloud | Works (model cached once) | [#18](https://github.com/dbillion/koala-rust/issues/18) for first-run download |
+| Runs on your machine, no cloud | Works (model cached once) | [#18](https://github.com/dbillion/koala-rust/issues/18) |
 | Semantic recall, version history | Works | |
-| Verified deletion of a fact and all its versions | **Broken**, old versions and bytes stay | [#11](https://github.com/dbillion/koala-rust/issues/11) |
-| Retention rules (TTL) | Missing | [#12](https://github.com/dbillion/koala-rust/issues/12) |
-| "What did the agent know on date X" | Missing | [#13](https://github.com/dbillion/koala-rust/issues/13) |
-| Encryption at rest | Missing | [#14](https://github.com/dbillion/koala-rust/issues/14) |
-| Tamper-evident audit log | Missing | [#15](https://github.com/dbillion/koala-rust/issues/15) |
-| Who can read what (labels, namespaces) | Missing | [#16](https://github.com/dbillion/koala-rust/issues/16) |
-| Signed and sandboxed plugins | Partial. The built-in `hash-tools` demo fails | [#17](https://github.com/dbillion/koala-rust/issues/17), [#29](https://github.com/dbillion/koala-rust/issues/29) |
+| Verified deletion of all versions | Not yet | [#11](https://github.com/dbillion/koala-rust/issues/11) |
+| Retention (TTL), point-in-time recall | Not yet | [#12](https://github.com/dbillion/koala-rust/issues/12), [#13](https://github.com/dbillion/koala-rust/issues/13) |
+| Encryption at rest, tamper-evident audit, access control | Not yet | [#14](https://github.com/dbillion/koala-rust/issues/14), [#15](https://github.com/dbillion/koala-rust/issues/15), [#16](https://github.com/dbillion/koala-rust/issues/16) |
 | HIPAA, SOC 2, FedRAMP, CMMC | None. These apply to organisations, not binaries | [#24](https://github.com/dbillion/koala-rust/issues/24) |
 
-### Healthcare
-- **Today:** fine for pilots with de-identified or synthetic data, or inside a machine you already
-  encrypt and control. Do not store patient identifiers yet.
-- **Why it fits:** data never leaves the hospital machine, and recall works from meaning
-  ("unsafe with blood thinners").
-- **Needed first:** verified delete ([#11](https://github.com/dbillion/koala-rust/issues/11)), retention, encryption, audit, access labels.
-  Guide: [#25](https://github.com/dbillion/koala-rust/issues/25). Whether you need a business associate agreement depends on who hosts and who can reach the data. Ask a health-privacy lawyer.
+**Healthcare.** Data never leaves the machine and recall works from meaning, which suits clinic
+copilots. Use de-identified or synthetic data until delete, retention, encryption, audit and access
+labels land. Whether you need a business associate agreement depends on who hosts it; ask a
+health-privacy lawyer. Guide: [#25](https://github.com/dbillion/koala-rust/issues/25).
 
-### Finance
-- **Today:** fine for analyst or advisor copilots on non-sensitive notes, and for personal use.
-  Do not store material non-public information yet.
-- **Why it fits:** local data, exact version history, no per-write model cost.
-- **Needed first:** namespaces for information barriers ([#16](https://github.com/dbillion/koala-rust/issues/16)), point-in-time recall ([#13](https://github.com/dbillion/koala-rust/issues/13)), audit chain ([#15](https://github.com/dbillion/koala-rust/issues/15)).
-  A hash chain alone is not SEC 17a-4 or WORM compliance. Pair with storage that holds that certification. Guide: [#26](https://github.com/dbillion/koala-rust/issues/26).
+**Finance.** Local data and exact version history suit analyst and advisor notes. Keep material
+non-public information out until namespaces, point-in-time recall and the audit chain exist. A hash
+chain alone is not SEC 17a-4 or WORM compliance. Guide: [#26](https://github.com/dbillion/koala-rust/issues/26).
 
-### Defense and intelligence (last)
-- **Today:** not suitable. The offline story is partly there, but buyers expect FIPS-validated
-  cryptography, TPM or HSM keys, SBOMs, CMMC and accreditation, and often certified hardware.
-- **Realistic route:** small embedded memory for edge devices through hardware partners and prime
-  integrators, after the health and finance work. Track: [#27](https://github.com/dbillion/koala-rust/issues/27).
+**Defense and intelligence (last).** The offline story is partly there. Buyers also expect
+FIPS-validated cryptography, TPM or HSM keys, SBOMs, accreditation and certified hardware. Realistic
+route: small embedded memory for edge devices through hardware partners, after the work above.
+Track: [#27](https://github.com/dbillion/koala-rust/issues/27).
+</details>
 
-## Where help is wanted
+## Contribute
 
-| Area | Issues |
-|---|---|
-| Data protection | [#11](https://github.com/dbillion/koala-rust/issues/11) delete bug, [#12](https://github.com/dbillion/koala-rust/issues/12) retention, [#14](https://github.com/dbillion/koala-rust/issues/14) encryption |
-| Trust and audit | [#13](https://github.com/dbillion/koala-rust/issues/13) as-of recall, [#15](https://github.com/dbillion/koala-rust/issues/15) audit log, [#16](https://github.com/dbillion/koala-rust/issues/16) access, [#17](https://github.com/dbillion/koala-rust/issues/17) plugin trust, [#29](https://github.com/dbillion/koala-rust/issues/29) plugin bug |
-| Offline and ops | [#18](https://github.com/dbillion/koala-rust/issues/18) offline build, [#20](https://github.com/dbillion/koala-rust/issues/20) migrations and backup |
-| Code health | [#19](https://github.com/dbillion/koala-rust/issues/19) split large files, [#21](https://github.com/dbillion/koala-rust/issues/21) errors and tests |
-| Usability | [#22](https://github.com/dbillion/koala-rust/issues/22) CLI recall, [#23](https://github.com/dbillion/koala-rust/issues/23) Python adapters |
-| Docs and sector guides | [#24](https://github.com/dbillion/koala-rust/issues/24), [#25](https://github.com/dbillion/koala-rust/issues/25), [#26](https://github.com/dbillion/koala-rust/issues/26), [#27](https://github.com/dbillion/koala-rust/issues/27) |
+New here? You are exactly who this project wants. We like first pull requests and we help you land them.
+
+1. **Pick a task:** browse [good first issues](https://github.com/dbillion/koala-rust/labels/good%20first%20issue)
+   or [help wanted](https://github.com/dbillion/koala-rust/labels/help%20wanted). Comment to say you are on it.
+2. **Set up in five minutes:** `git clone`, `cargo build`, `cargo test`. Steps and checks are in
+   [CONTRIBUTING.md](CONTRIBUTING.md).
+3. **Open a pull request.** Small and focused is great.
+
+Ideas that need no Rust: record the README demo ([#34](https://github.com/dbillion/koala-rust/issues/34)),
+test setup on your MCP client ([#35](https://github.com/dbillion/koala-rust/issues/35)), try the examples on macOS or
+Windows ([#36](https://github.com/dbillion/koala-rust/issues/36)), improve docs, or write an example in your favourite language
+([#38](https://github.com/dbillion/koala-rust/issues/38)).
+
+Found a bug or have an idea? [Open an issue](https://github.com/dbillion/koala-rust/issues/new/choose).
+Security problem? See [SECURITY.md](SECURITY.md). Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+<a href="https://github.com/dbillion/koala-rust/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=dbillion/koala-rust">
+</a>
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ---
 
@@ -191,6 +248,8 @@ The original README content, kept in full. Where v0.3.3 behaves differently, the
 | **MCP Server** | 60 tools via stdio — works with Claude, Hermes, any MCP client |
 
 ---
+
+<a id="architecture"></a>
 
 ## 🏛️ Architecture Overview
 
