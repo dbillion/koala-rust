@@ -1,0 +1,31 @@
+[package]
+name = "koala-rust-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+koala-rust = { path = "..", default-features = false }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+tokio = { version = "1", features = ["rt", "time", "net", "io-util"] }
+
+[[bin]]
+name = "jsonrpc_parser"
+path = "fuzz_targets/jsonrpc_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw_sql"
+path = "fuzz_targets/raw_sql.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

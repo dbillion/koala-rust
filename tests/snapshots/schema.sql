@@ -22,6 +22,12 @@ CREATE INDEX idx_relations_to ON relations(to_entity);
 -- index: idx_sync_changes_peer (sync_changes)
 CREATE INDEX idx_sync_changes_peer ON sync_changes(peer_id, doc_type);
 
+-- table: audit_head (audit_head)
+CREATE TABLE audit_head (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), head_hash TEXT NOT NULL, key_id TEXT, public_key BLOB, signature BLOB, updated_at TEXT NOT NULL);
+
+-- table: audit_log (audit_log)
+CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, subject TEXT NOT NULL, details_json TEXT NOT NULL, previous_hash TEXT NOT NULL, entry_hash TEXT NOT NULL UNIQUE);
+
 -- table: brain_meta (brain_meta)
 CREATE TABLE brain_meta (
                 key TEXT PRIMARY KEY,
@@ -187,3 +193,9 @@ CREATE TABLE thoughts (
                 thought TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+-- trigger: audit_log_no_delete (audit_log)
+CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+
+-- trigger: audit_log_no_update (audit_log)
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;

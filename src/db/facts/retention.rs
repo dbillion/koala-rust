@@ -42,9 +42,15 @@ impl Database {
         }
         for name in expired_names {
             sqlx::query("INSERT OR REPLACE INTO facts_tombstone (name, actor, reason) VALUES (?, 'local', 'ttl_expired')")
-                .bind(name)
-                .execute(&mut *tx)
-                .await?;
+                .bind(&name).execute(&mut *tx).await?;
+            super::super::audit::append_tx(
+                &mut tx,
+                &super::super::audit::actor(),
+                "fact.expire",
+                &name,
+                serde_json::json!({"reason": "ttl_expired"}),
+            )
+            .await?;
         }
         tx.commit().await?;
         Ok(rowids)
@@ -69,6 +75,14 @@ impl Database {
             .rows_affected();
 
         if deleted > 0 {
+            super::super::audit::append_tx(
+                &mut tx,
+                actor,
+                "fact.delete",
+                name,
+                serde_json::json!({"reason": reason, "versions_deleted": deleted}),
+            )
+            .await?;
             sqlx::query(
                 "INSERT OR REPLACE INTO facts_tombstone (name, actor, reason) VALUES (?, ?, ?)",
             )
@@ -80,14 +94,5 @@ impl Database {
         }
         tx.commit().await?;
         Ok(deleted > 0)
-    }
-
-    /// Reclaim pages released by a secure purge. This is effective when the
-    /// database has incremental auto-vacuum enabled during initialization.
-    pub async fn incremental_vacuum(&self) -> Result<()> {
-        sqlx::query("PRAGMA incremental_vacuum")
-            .execute(&self.pool)
-            .await?;
-        Ok(())
     }
 }

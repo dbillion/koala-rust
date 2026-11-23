@@ -67,34 +67,134 @@ jobs:
       - name: Build (debug)
         run: cargo build --locked --all-targets
 
+      - name: Provision local embedding model for deterministic tests
+        run: target/debug/koala-rust model fetch --to "$RUNNER_TEMP/koala-model"
+
       - name: Verify CLI, MCP, and SQLite snapshots
         env:
           KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
           KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
         run: python3 tests/snapshot_baseline.py
 
       - name: End-to-end regression suite
         env:
           KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
           KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
         run: python3 tests/e2e.py
 
       - name: Python stdio client and adapter integration tests
         env:
           KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
           KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
         run: PYTHONPATH=python python3 -m unittest discover -s python/tests -v
 
       - name: SQLCipher encryption integration test
-        run: cargo test --locked --features sqlcipher --lib encrypted_database_requires_the_correct_key_and_hides_plaintext
+        env:
+          KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+        run: cargo test --locked --no-default-features --features sqlcipher --lib encrypted_database_requires_the_correct_key_and_hides_plaintext
 
       - name: Test
+        env:
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
         run: cargo test --locked --all-targets
 
       - name: Verify binary
         run: |
           cargo build --locked --release
           ./target/release/koala-rust --help
+
+  offline-build:
+    name: Offline Build and Air-Gapped E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download pinned sqlite-vec
+        run: |
+          curl --fail --location --silent --show-error --connect-timeout 20 --max-time 180 --retry 2 --retry-delay 2 --retry-all-errors https://github.com/asg017/sqlite-vec/releases/download/v0.1.10-alpha.4/sqlite-vec-0.1.10-alpha.4-loadable-linux-x86_64.tar.gz --output sqlite-vec.tar.gz
+          echo "0349d1cffea2da145eb195ee0fa0e7803544a9491a458c58aeacfb434517abf1  sqlite-vec.tar.gz" | sha256sum --check
+          mkdir -p sqlite-vec
+          tar -xzf sqlite-vec.tar.gz -C sqlite-vec
+          cp sqlite-vec/vec0.so vec0.so
+
+      - name: Build network-enabled model provisioning CLI
+        run: cargo build --locked
+
+      - name: Provision model for offline runtime
+        run: target/debug/koala-rust model fetch --to "${{ runner.temp }}/koala-model"
+
+      - name: Build without network support
+        run: cargo build --locked --no-default-features
+
+      - name: Assert network clients are absent
+        shell: bash
+        run: |
+          if cargo tree --locked --no-default-features | grep -E '(^|[[:space:]])(reqwest|ureq|hf-hub) v'; then
+            echo "network client dependency found in offline build"
+            exit 1
+          fi
+
+      - name: Run end-to-end test inside an isolated network namespace
+        env:
+          KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
+          KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+        run: bash tests/offline_e2e.sh
+
+      - name: Run unit tests without network support
+        env:
+          KOALA_MODEL_DIR: ${{ runner.temp }}/koala-model
+        run: cargo test --locked --no-default-features --lib
+
+  security-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit and cargo-deny
+        run: |
+          cargo install cargo-audit --locked
+          cargo install cargo-deny --locked
+
+      - name: Audit RustSec advisories
+        run: cargo audit
+
+      - name: Check advisories with cargo-deny
+        run: cargo deny check advisories
+
+  fuzz:
+    name: Fuzz Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install nightly Rust
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz JSON-RPC parser
+        run: cargo fuzz run jsonrpc_parser -- -max_total_time=30 -max_len=4096
+
+      - name: Fuzz raw SQL execution
+        run: cargo fuzz run raw_sql -- -max_total_time=30 -max_len=2048
 
   msrv:
     name: MSRV (Rust 1.91)

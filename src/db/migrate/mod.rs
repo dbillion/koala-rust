@@ -13,8 +13,9 @@ mod thoughts;
 mod v1;
 mod v2;
 mod v3;
+mod v4;
 
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 /// Apply numbered migrations atomically. A future schema change adds a v2
 /// module and advances CURRENT_SCHEMA_VERSION; databases from newer binaries
@@ -55,6 +56,21 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
         sqlx::query("PRAGMA user_version = 3")
             .execute(&mut *tx)
             .await?;
+        version = 3;
+    }
+    if version < 4 {
+        v4::run(&mut tx).await?;
+        sqlx::query("PRAGMA user_version = 4")
+            .execute(&mut *tx)
+            .await?;
+        super::audit::append_tx(
+            &mut tx,
+            "system",
+            "schema.migrate",
+            "database",
+            serde_json::json!({"from": current, "to": 4}),
+        )
+        .await?;
     }
     tx.commit().await?;
     Ok(())

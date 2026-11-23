@@ -40,8 +40,17 @@ impl Database {
         .fetch_one(&mut *tx)
         .await?;
 
+        let rowid: i64 = row.get("rowid");
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "fact.write",
+            name,
+            serde_json::json!({"rowid": rowid, "ttl_seconds": ttl_seconds}),
+        )
+        .await?;
         tx.commit().await?;
-        Ok(row.get("rowid"))
+        Ok(rowid)
     }
 
     pub async fn read_fact(&self, name: &str) -> Result<Option<(i64, String)>> {
@@ -82,6 +91,7 @@ impl Database {
 }
 
 mod retention;
+mod vacuum;
 
 #[cfg(test)]
 mod tests;

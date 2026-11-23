@@ -4,10 +4,11 @@ Local-first memory for AI agents. One small binary that speaks MCP over stdio.
 Versioned facts, semantic recall, knowledge graph, tasks, handoff notes, sync primitives, and plugin hooks.
 Data stays in a SQLite file on your machine.
 
-> **Status (v0.3.4): useful for pilots and personal or team agent memory. Not ready for regulated
-> production data.** There is no application-level encryption at rest, no access control, no
-> tamper-evident audit log and no certification. Use host full-disk encryption as an interim
-> at-rest control; it does not protect a running/unlocked host. See [Readiness](#readiness-for-health-finance-and-defense),
+> **Status (v0.3.5): useful for pilots and personal or team agent memory. Not ready for regulated
+> production data.** The default database is not encrypted, access control is not implemented,
+> and audit coverage is partial (not WORM). An experimental SQLCipher build option exists, but it
+> is not a complete key-management solution. There is no certification. Use host full-disk
+> encryption as an interim at-rest control; it does not protect a running/unlocked host. See [Readiness](#readiness-for-health-finance-and-defense),
 > [Security](SECURITY.md), and the [open issues](https://github.com/dbillion/koala-rust/issues).
 > Every number below was measured on the v0.3.3 Linux x86_64 release binary on 22 Nov 2026 unless marked otherwise.
 
@@ -34,7 +35,7 @@ python3 examples/demo.py ./koala-rust
 Expected output of step 3 (made-up sample data):
 
 ```
-MCP tools: 60
+MCP tools: 61
 stored health/cardio  1.14s      <- first call loads the model
 Q: which medicines are unsafe with blood thinners
  -> health/cardio: Patient on warfarin, avoid NSAIDs due to bleeding risk
@@ -77,8 +78,8 @@ Some run a language-model call on every write. koala-rust is a different trade:
 - **Speaks MCP natively.** 61 tools, works with agents you already use.
 
 Be honest about the limits: "local and offline" alone is not unique (see table). The aim is to
-be the smallest local option and, once the issues below land, the one with provable history,
-verified deletion and a tamper-evident audit trail.
+be the smallest local option with verifiable history, deletion, and a tamper-evident audit trail.
+Current evidence and remaining gaps are listed in the claims table and linked issues.
 
 ## Comparison with current tools
 
@@ -364,18 +365,18 @@ mcp_servers:
 |---|----------|-------|
 | **1** | **Institutional Knowledge Retention** | Never lose technical decisions, debugging context, or tribal knowledge when team members leave. Semantic search finds "why we chose X" instantly. |
 | **2** | **Multi-Agent Collaboration** | CRDT change/merge primitives are available; durable peer transport and conflict operations across processes remain future work. |
-| **3** | **Compliance & Audit Trail** | Versioned facts + timestamps = immutable record of decisions. Export for SOC2, GDPR, or internal audits. |
+| **3** | **Audit & Change History** | Versioned facts plus a partial hash-chain audit log support internal review. This is not immutable/WORM storage or compliance evidence. |
 | **4** | **Cross-Session Continuity** | Agents resume exactly where they left off — context, tasks, learned patterns persist across restarts, days, machines. |
 | **5** | **Local AI Memory** | Runs locally after the embedding model is provisioned. First-run downloads may require network access; the database is not encrypted and there is no built-in access control. |
-| **6** | **Plugin-Driven Workflow Automation** | Install WASM plugins for custom transformers (hash, JSON, text, domain-specific). Extend without recompiling. |
+| **6** | **Plugin-Driven Workflow Automation** | Built-in WASM utilities and optional trusted native plugins are available. Third-party WASM tool execution and native-plugin isolation remain limited. |
 | **7** | **Semantic Search over Conversations** | "What did we decide about auth last month?" → vector search returns relevant turns, not keyword matches. |
 | **8** | **Knowledge Graph for Domain Modeling** | Entities + observations + relations = queryable domain model. "Show all services depending on PostgreSQL." |
 | **9** | **Task Handoff Between Agents** | Structured tasks with state, priority, assignee. Agent A creates, Agent B picks up, Agent C reviews — all tracked. |
 | **10** | **Embedding-Powered RAG Without Cloud** | Local embeddings + vector search = full RAG pipeline on-device. Zero marginal cost per query. |
 
-> **Reality check (v0.3.3)** for use cases 3 and 5.
-> - **#3 Compliance & audit trail.** Versions and timestamps are a history, not an immutable record. Rows can be edited, and `fact-delete` leaves old versions and bytes on disk ([#11](https://github.com/dbillion/koala-rust/issues/11)). There is no hash chain or signature yet ([#15](https://github.com/dbillion/koala-rust/issues/15)). Do not present it to an auditor as tamper-evident. Nothing here is certified for SOC 2 or HIPAA.
-> - **#5 Local-first.** Runtime recall can work offline once the embedding model is cached. First-run model provisioning and registry updates need network access ([#18](https://github.com/dbillion/koala-rust/issues/18)). The database file is not encrypted ([#14](https://github.com/dbillion/koala-rust/issues/14)); do not describe the product as air-gap ready without an offline provisioning process.
+> **Reality check (v0.3.5 development branch)** for use cases 3 and 5.
+> - **#3 Compliance & audit trail.** Fact versions are accompanied by a hash-chain audit log and optional Ed25519-signed head. Application audit coverage is partial; raw SQL and direct database edits can bypass application events, and signer identity is trusted only with an externally pinned public key. This is not WORM or a certification.
+> - **#5 Local-first.** Runtime recall works offline once the embedding model is cached. First-run model provisioning and remote plugin installs still need network access (#18). SQLCipher is experimental and opt-in; the default database is not encrypted, and there is no built-in access control (#14, #16).
 
 ---
 
@@ -607,8 +608,13 @@ git push origin v0.3.0
 | macOS x86_64 (Intel) | `koala-rust-x86_64-apple-darwin` |
 | macOS ARM64 (Apple Silicon) | `koala-rust-aarch64-apple-darwin` |
 | Windows x86_64 | `koala-rust-x86_64-pc-windows-msvc.exe` |
+| Linux x86_64 (offline) | `koala-rust-offline-x86_64-unknown-linux-gnu` |
+| Linux ARM64 (offline) | `koala-rust-offline-aarch64-unknown-linux-gnu` |
+| macOS Intel (offline) | `koala-rust-offline-x86_64-apple-darwin` |
+| macOS Apple Silicon (offline) | `koala-rust-offline-aarch64-apple-darwin` |
+| Windows x86_64 (offline) | `koala-rust-offline-x86_64-pc-windows-msvc.exe` |
 
-Each release includes `SHA256SUMS.txt` for verification.
+Each release includes `SHA256SUMS.txt`, a Sigstore bundle for the checksum manifest, and a CycloneDX SBOM.
 
 ---
 
@@ -669,17 +675,31 @@ Install: `koala-rust plugin-install --path ./libplugin.so --type native`
 
 ---
 
+## Offline / air-gapped operation
+
+The normal build includes network clients for first-run model provisioning and remote plugin downloads. Release archives also include separate offline binaries compiled without HTTP clients. For an air-gapped runtime, provision the model while online, then use the offline release binary or build without network clients:
+
+    # On a connected machine, using a network-enabled build:
+    koala-rust model fetch --to ~/.koala/models/potion-base-8M
+
+    # Build a binary with no reqwest, ureq, or Hugging Face Hub client:
+    cargo build --locked --no-default-features
+
+    # On the offline machine, run the offline release executable (or the binary
+    # produced by the no-default-features build):
+    export KOALA_MODEL_DIR="$HOME/.koala/models/potion-base-8M"
+    ./koala-rust-offline --offline --serve
+
+Bundled plugins remain available. Remote plugin downloads and model fetches are intentionally unavailable in offline mode. The matching vec0 library must stay beside the executable or be selected with KOALA_VEC0_PATH.
+
 ## 🔒 Privacy & Security
 
-- **100% local** — no network calls except initial model download (~30 MB potion-base-8M from HuggingFace)
-  - Checked in the v0.3.3 source: HTTP is used only by the model download and the plugin marketplace (registry on GitHub). No telemetry code found. Offline build: [#18](https://github.com/dbillion/koala-rust/issues/18).
-- **WASM sandbox** — memory-limited, no host access
-  - A `max_memory_mb` setting exists but is not enforced anywhere in the code, and there are no fuel or time limits yet ([#17](https://github.com/dbillion/koala-rust/issues/17)).
-- **Native plugins** — only from trusted sources (you verify)
-  - Native plugins are shared libraries with full host access, outside the sandbox. Planned to be off by default ([#17](https://github.com/dbillion/koala-rust/issues/17)).
-- **SQLite** — single file, easy to backup/encrypt
-  - koala-rust does not encrypt the file itself ([#14](https://github.com/dbillion/koala-rust/issues/14)). Use full-disk encryption for now.
-- **No telemetry** — zero data leaves your machine
+- **Local-first, no telemetry** — cached-model recall runs locally. Build without network clients using cargo build --no-default-features, fetch a model with koala-rust model fetch --to DIR, then set KOALA_MODEL_DIR and run with --offline. Remote plugin installs and model provisioning still require a network-enabled build ([#18](https://github.com/dbillion/koala-rust/issues/18)).
+- **WASM execution limits** — Wasmtime fuel, linear-memory and table limits are enabled, with no WASI imports by default. A restricted host API is exposed; this is not a complete security boundary, and third-party WASM tool execution is not implemented ([#17](https://github.com/dbillion/koala-rust/issues/17)).
+- **Native plugins** — disabled by default behind the optional native-plugins feature. When enabled, native libraries run in-process with full host privileges and are outside the WASM isolation boundary.
+- **SQLite encryption** — default databases are plain SQLite. An experimental sqlcipher build feature accepts KOALA_DB_KEY, but key-provider, rekey, backup/restore and sync-blob coverage are incomplete. Use full-disk encryption as the supported baseline ([#14](https://github.com/dbillion/koala-rust/issues/14)).
+- **Audit trail** — hash-chain entries, append-only triggers, audit verify/export, and optional Ed25519-signed heads are implemented. Mutation coverage is partial, and signer identity requires an externally pinned public key ([#15](https://github.com/dbillion/koala-rust/issues/15)).
+- **Access control** — no authenticated caller identity, access labels, or tenant isolation yet ([#16](https://github.com/dbillion/koala-rust/issues/16)).
 
 ---
 

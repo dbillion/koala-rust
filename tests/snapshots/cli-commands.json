@@ -258,15 +258,15 @@
       "output": {
         "cache_used": 0,
         "journal": true,
-        "pages": 305,
+        "pages": 310,
         "pending_flush": false,
-        "tables": 26,
+        "tables": 28,
         "usage_tracked": 0
       }
     },
     "health-text": {
       "exit_code": 0,
-      "output": "cache_used: 0\njournal: true\npages: 305\npending_flush: false\ntables: 26\nusage_tracked: 0"
+      "output": "cache_used: 0\njournal: true\npages: 310\npending_flush: false\ntables: 28\nusage_tracked: 0"
     },
     "model-init": {
       "exit_code": 0,
@@ -476,6 +476,7 @@
   "not_run": {
     "embed-batch": "requires a pretrained Model2Vec model",
     "embed-text": "requires a pretrained Model2Vec model",
+    "model-fetch": "downloads model files from Hugging Face",
     "plugin-update-registry": "contacts the public registry"
   }
 }

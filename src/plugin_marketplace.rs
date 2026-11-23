@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+#[cfg(feature = "net")]
 use reqwest::Client;
 use ring::signature::{UnparsedPublicKey, ED25519};
 use serde_json::json;
@@ -64,6 +65,7 @@ pub struct PluginRegistry {
     install_dir: PathBuf,
     wasm_module_dir: PathBuf,
     native_module_dir: PathBuf,
+    #[cfg(feature = "net")]
     client: Client,
 }
 
@@ -90,6 +92,7 @@ impl PluginRegistry {
             install_dir,
             wasm_module_dir,
             native_module_dir,
+            #[cfg(feature = "net")]
             client: Client::new(),
         })
     }
@@ -261,8 +264,12 @@ impl PluginRegistry {
         Ok(())
     }
 
-    /// Update the registry from a remote source
+    /// Update the registry from a remote source.
+    #[cfg(feature = "net")]
     pub async fn update_registry(&self, registry_url: Option<&str>) -> Result<usize> {
+        if std::env::var_os("KOALA_OFFLINE").is_some() {
+            anyhow::bail!("remote registry updates are disabled in offline mode");
+        }
         let url = registry_url.unwrap_or(
             "https://raw.githubusercontent.com/dbillion/koala-plugins/main/registry.json",
         );
@@ -288,6 +295,15 @@ impl PluginRegistry {
         Ok(count)
     }
 
+    /// Offline builds use the bundled registry and cannot refresh it remotely.
+    #[cfg(not(feature = "net"))]
+    pub async fn update_registry(&self, _registry_url: Option<&str>) -> Result<usize> {
+        anyhow::bail!(
+            "remote registry updates require the net feature; bundled index is at {}",
+            self.index_path.display()
+        )
+    }
+
     /// Get registry stats
     pub async fn stats(&self) -> Result<serde_json::Value> {
         let index = self.index.read().await;
@@ -311,8 +327,12 @@ impl PluginRegistry {
         categories
     }
 
-    /// Download a WASM plugin from a URL
+    /// Download a WASM plugin from a URL when network support is compiled in.
+    #[cfg(feature = "net")]
     async fn download_wasm(&self, url: &str) -> Result<Vec<u8>> {
+        if std::env::var_os("KOALA_OFFLINE").is_some() {
+            anyhow::bail!("remote plugin downloads are disabled in offline mode");
+        }
         let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
@@ -321,6 +341,14 @@ impl PluginRegistry {
             ));
         }
         Ok(response.bytes().await?.to_vec())
+    }
+
+    /// Offline builds retain bundled plugins but cannot fetch remote artifacts.
+    #[cfg(not(feature = "net"))]
+    async fn download_wasm(&self, _url: &str) -> Result<Vec<u8>> {
+        anyhow::bail!(
+            "remote plugin downloads require the net feature; bundled plugins remain available"
+        )
     }
 
     /// Generate a builtin WASM plugin (use pre-compiled WASM from build time)

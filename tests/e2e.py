@@ -23,7 +23,12 @@ results = []
 
 def start(name, extra=None):
     state = os.path.join(TMP, name)
-    env = dict(os.environ, KOALA_STATE_DIR=state, **(extra or {}))
+    env = dict(os.environ, KOALA_STATE_DIR=state)
+    env.update(extra or {})
+    # A deliberate remote-model override must supersede a shared local model
+    # path so the degraded-start/reindex-retry scenario exercises failure.
+    if extra and "KOALA_EMBED_MODEL" in extra:
+        env.pop("KOALA_MODEL_DIR", None)
     p = subprocess.Popen([BIN, "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, env=env)
     n = {"id": 0}
@@ -214,6 +219,30 @@ def main():
                                   "SELECT 1 as num, 'test' as txt, 2.5 as flt", "-f", "json"], text=True)
     sql_rows = json.loads(out)
     check("sql CLI decodes primitives", sql_rows == [{"flt": 2.5, "num": 1, "txt": "test"}])
+
+    # ---- independent processes write concurrently to one SQLite database
+    concurrent_state = os.path.join(TMP, "multi-process")
+    concurrent_env = dict(os.environ, KOALA_STATE_DIR=concurrent_state)
+    seed = subprocess.run(
+        [BIN, "--state-dir", concurrent_state, "fact-write", "--name", "multi_seed", "--text", "seed"],
+        capture_output=True, text=True, env=concurrent_env, timeout=30,
+    )
+    check("multi-process database initialized", seed.returncode == 0, seed.stderr[:160])
+    writers = [
+        subprocess.Popen(
+            [BIN, "--state-dir", concurrent_state, "fact-write", "--name", f"multi_writer_{i}",
+             "--text", f"concurrent writer payload {i}"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=concurrent_env,
+        )
+        for i in range(2)
+    ]
+    writer_results = [writer.communicate(timeout=30) + (writer.returncode,) for writer in writers]
+    check("two concurrent CLI writers both succeed",
+          all(result[2] == 0 for result in writer_results),
+          [result[1][:120] for result in writer_results])
+    concurrent_db = os.path.join(concurrent_state, "koala.db")
+    check("both concurrent writes are durable",
+          sql(concurrent_db, "select count(*) from facts where name like 'multi_writer_%'") == "2")
 
     # ---- AI continuity & context lifecycle test
     c_server = start("continuity")

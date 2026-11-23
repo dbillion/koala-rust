@@ -7,9 +7,20 @@ impl Database {
     ///
     /// SQLite `WITH RECURSIVE` CTE; no graph extension needed.
     pub async fn create_relation(&self, from: &str, to: &str, rel_type: &str) -> Result<i64> {
+        let mut tx = self.pool.begin().await?;
         let row = sqlx::query("INSERT INTO relations (from_entity, to_entity, rel_type) VALUES (?, ?, ?) RETURNING rowid")
-            .bind(from).bind(to).bind(rel_type).fetch_one(&self.pool).await?;
-        Ok(row.get("rowid"))
+            .bind(from).bind(to).bind(rel_type).fetch_one(&mut *tx).await?;
+        let rowid: i64 = row.get("rowid");
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "relation.create",
+            &format!("{}->{}", from, to),
+            serde_json::json!({"rowid": rowid, "type": rel_type}),
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(rowid)
     }
 
     pub async fn traverse_relations(

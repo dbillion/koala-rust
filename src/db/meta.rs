@@ -12,11 +12,21 @@ impl Database {
     }
 
     pub async fn meta_set(&self, key: &str, value: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query("INSERT OR REPLACE INTO brain_meta(key, value) VALUES (?, ?)")
             .bind(key)
             .bind(value)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "meta.set",
+            key,
+            serde_json::json!({"value_bytes": value.len()}),
+        )
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -11,6 +11,9 @@ impl Database {
         biases: &[f32],
         optimizer: Option<&str>,
     ) -> Result<()> {
+        let weights_len = weights.len();
+        let biases_len = biases.len();
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO model_weights (step, weights_json, biases_json, optimizer_json) VALUES (?, ?, ?, ?)"
         )
@@ -18,7 +21,16 @@ impl Database {
         .bind(serde_json::to_string(weights)?)
         .bind(serde_json::to_string(biases)?)
         .bind(optimizer)
-        .execute(&self.pool).await?;
+        .execute(&mut *tx).await?;
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "model.save",
+            &format!("step:{step}"),
+            serde_json::json!({"weights": weights_len, "biases": biases_len}),
+        )
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -27,16 +39,22 @@ impl Database {
             .bind(step)
             .fetch_optional(&self.pool).await?;
 
-        Ok(row.map(|r| {
-            (
-                serde_json::from_str(r.get("weights_json")).unwrap(),
-                serde_json::from_str(r.get("biases_json")).unwrap(),
-            )
-        }))
+        match row {
+            Some(row) => {
+                let weights_json: String = row.try_get("weights_json")?;
+                let biases_json: String = row.try_get("biases_json")?;
+                Ok(Some((
+                    serde_json::from_str(&weights_json)?,
+                    serde_json::from_str(&biases_json)?,
+                )))
+            }
+            None => Ok(None),
+        }
     }
 
     // Full model state save/load
     pub async fn save_model_full(&self, step: i64, state_json: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         sqlx::query(
             "INSERT INTO model_weights (step, weights_json, biases_json, optimizer_json) VALUES (?, ?, ?, ?)"
         )
@@ -44,7 +62,16 @@ impl Database {
         .bind(state_json)
         .bind(state_json)
         .bind(None::<String>)
-        .execute(&self.pool).await?;
+        .execute(&mut *tx).await?;
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "model.save_full",
+            &format!("step:{step}"),
+            serde_json::json!({"state_bytes": state_json.len()}),
+        )
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 

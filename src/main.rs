@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 //! Koala MCP Server & CLI in Rust
 //!
 //! A persistent memory system for AI agents with vector search, multi-agent sync,
@@ -75,6 +76,10 @@ struct Args {
     /// Run as MCP server over stdio (full 53 tools)
     #[arg(long)]
     serve: bool,
+
+    /// Disable all runtime network access; requires a local model directory
+    #[arg(long, global = true)]
+    offline: bool,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -473,6 +478,12 @@ enum Command {
         path: PathBuf,
     },
 
+    /// Verify or export the tamper-evident audit chain
+    Audit {
+        #[command(subcommand)]
+        action: AuditAction,
+    },
+
     // === SQL ===
     /// Run raw SQL query
     Sql {
@@ -480,11 +491,41 @@ enum Command {
         query: String,
     },
 
+    // === Model provisioning ===
+    /// Download a Model2Vec model for later offline use
+    Model {
+        #[command(subcommand)]
+        action: ModelAction,
+    },
+
     // === Context & Continuity ===
     /// AI Continuity and context lifecycle commands
     Context {
         #[command(subcommand)]
         action: ContextAction,
+    },
+}
+
+/// Audit log operations
+#[derive(Subcommand, Debug)]
+enum AuditAction {
+    /// Verify the hash chain and signed head
+    Verify,
+    /// Export all audit records as JSON
+    Export,
+}
+
+/// Model provisioning actions
+#[derive(Subcommand, Debug)]
+enum ModelAction {
+    /// Fetch model files into a directory for offline runtime use
+    Fetch {
+        /// Destination directory for the local Model2Vec files
+        #[arg(long)]
+        to: PathBuf,
+        /// Hugging Face model repository
+        #[arg(long, default_value = "minishlab/potion-base-8M")]
+        model: String,
     },
 }
 
@@ -552,6 +593,28 @@ enum ContextAction {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Args::parse();
+    if cli.offline {
+        std::env::set_var("KOALA_OFFLINE", "1");
+        std::env::set_var("HF_HUB_OFFLINE", "1");
+        std::env::set_var("TRANSFORMERS_OFFLINE", "1");
+    }
+
+    // Model provisioning does not need to open the database or load sqlite-vec.
+    if let Some(Command::Model {
+        action: ModelAction::Fetch { to, model },
+    }) = cli.command.as_ref()
+    {
+        koala_rust::embeddings::fetch_model_to(model, to)?;
+        print_output(
+            cli.format,
+            serde_json::json!({
+                "model": model,
+                "directory": to.display().to_string(),
+                "offline_env": "KOALA_MODEL_DIR",
+            }),
+        );
+        return Ok(());
+    }
 
     let state_dir = cli.state_dir.unwrap_or_else(|| {
         dirs::home_dir()
@@ -988,6 +1051,39 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
         }
         Command::DbRestore { .. } => unreachable!("restore is handled before opening the database"),
 
+        // Audit
+        Command::Audit {
+            action: AuditAction::Verify,
+        } => {
+            let result = brain.db.audit_verify().await?;
+            print_output(format, serde_json::to_value(result)?);
+        }
+        Command::Audit {
+            action: AuditAction::Export,
+        } => {
+            let verification = brain.db.audit_verify().await?;
+            let records = brain.db.audit_export().await?;
+            print_output(
+                format,
+                serde_json::json!({"verification": verification, "records": records}),
+            );
+        }
+
+        // Model provisioning
+        Command::Model {
+            action: ModelAction::Fetch { to, model },
+        } => {
+            koala_rust::embeddings::fetch_model_to(&model, &to)?;
+            print_output(
+                format,
+                serde_json::json!({
+                    "model": model,
+                    "directory": to.display().to_string(),
+                    "offline_env": "KOALA_MODEL_DIR",
+                }),
+            );
+        }
+
         // SQL
         Command::Sql { query } => {
             let rows = brain.db.raw_sql(&query).await?;
@@ -1065,7 +1161,10 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
 /// Print output based on format
 fn print_output(format: OutputFormat, value: serde_json::Value) {
     match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&value).unwrap()),
+        OutputFormat::Json => match serde_json::to_string_pretty(&value) {
+            Ok(json) => println!("{json}"),
+            Err(error) => eprintln!("failed to serialize JSON output: {error}"),
+        },
         OutputFormat::Text => {
             if value.is_object() {
                 let mut out = String::new();

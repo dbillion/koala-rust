@@ -1888,7 +1888,7 @@ dependencies = [
 
 [[package]]
 name = "koala-rust"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "automerge 0.3.0",
@@ -1900,6 +1900,7 @@ dependencies = [
  "dashmap",
  "dirs 5.0.1",
  "hex",
+ "hf-hub",
  "libloading",
  "libsqlite3-sys",
  "md-5",

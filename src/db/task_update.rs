@@ -54,7 +54,20 @@ impl Database {
         }
         q = q.bind(id);
 
-        let result = q.execute(&self.pool).await?;
+        let mut tx = self.pool.begin().await?;
+        let result = q.execute(&mut *tx).await?;
+        if result.rows_affected() > 0 {
+            super::audit::append_tx(
+                &mut tx,
+                &super::audit::actor(),
+                "task.update",
+                &format!("task:{}", id),
+                serde_json::json!({"title_changed": title.is_some(), "body_changed": body.is_some(),
+                    "status": status, "project": project, "priority": priority}),
+            )
+            .await?;
+        }
+        tx.commit().await?;
         Ok(result.rows_affected() > 0)
     }
 }

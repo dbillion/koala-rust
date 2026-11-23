@@ -1,6 +1,6 @@
 [package]
 name = "koala-rust"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "Koala MCP Server in Rust - Persistent memory, vector search, multi-agent sync, plugins"
 license = "MIT OR Apache-2.0"
@@ -13,7 +13,8 @@ include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugin
 rust-version = "1.91"
 
 [features]
-default = []
+default = ["net"]
+net = ["dep:reqwest", "dep:hf-hub", "model2vec-rs/hf-hub"]
 native-plugins = ["dep:libloading"]
 sqlcipher = ["dep:libsqlite3-sys"]
 
@@ -39,7 +40,7 @@ automerge = "0.3"
 automerge_repo = "0.1"
 
 # v0.4: Real Embeddings (Model2Vec - static token lookup, no neural net)
-model2vec-rs = "0.4"
+model2vec-rs = { version = "0.4", default-features = false, features = ["onig"] }
 tokenizers = "0.19"
 
 # v0.5: Plugin system
@@ -54,7 +55,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)
-reqwest = { version = "0.12", features = ["json", "native-tls-vendored"] }
+reqwest = { version = "0.12", optional = true, features = ["json", "native-tls-vendored"] }
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
 sha2 = "0.10"
 hex = "0.4"
 md-5 = "0.10"

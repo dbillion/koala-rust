@@ -8,7 +8,7 @@ mod handlers;
 mod server;
 mod tools;
 
-pub use server::run_stdio;
+pub use server::{parse_jsonrpc_request, run_stdio};
 
 fn missing_arg(key: &str) -> anyhow::Error {
     anyhow::anyhow!("missing or invalid argument: {}", key)

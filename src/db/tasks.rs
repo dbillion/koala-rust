@@ -12,16 +12,20 @@ impl Database {
         project: &str,
         priority: &str,
     ) -> Result<i64> {
-        let row = sqlx::query(
-            "INSERT INTO tasks (title, body, status, project, priority) VALUES (?, ?, ?, ?, ?) RETURNING rowid"
+        let mut tx = self.pool.begin().await?;
+        let row = sqlx::query("INSERT INTO tasks (title, body, status, project, priority) VALUES (?, ?, ?, ?, ?) RETURNING rowid")
+            .bind(title).bind(body).bind(status).bind(project).bind(priority).fetch_one(&mut *tx).await?;
+        let rowid: i64 = row.get("rowid");
+        super::audit::append_tx(
+            &mut tx,
+            &super::audit::actor(),
+            "task.create",
+            &format!("task:{}", rowid),
+            serde_json::json!({"status": status, "project": project, "priority": priority}),
         )
-        .bind(title)
-        .bind(body)
-        .bind(status)
-        .bind(project)
-        .bind(priority)
-        .fetch_one(&self.pool).await?;
-        Ok(row.get("rowid"))
+        .await?;
+        tx.commit().await?;
+        Ok(rowid)
     }
 
     pub async fn query_tasks(

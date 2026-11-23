@@ -10,11 +10,11 @@ privacy, security, legal, and compliance owners approve the complete deployment.
 | Risk analysis and management | No organisation-wide risk analysis | Document threats, assets, likelihood/impact, mitigations, and periodic review |
 | Workforce security / training | No workforce roles or training | Assign authorised operators, train them, revoke access promptly |
 | Access control (164.312(a)) | No caller identity, role, or minimum-necessary policy | Enforce unique identities, least privilege, and tenant/namespace boundaries before PHI use (#16) |
-| Audit controls (164.312(b)) | No append-only signed audit record | Record access, changes, exports, admin actions; protect and review logs (#15) |
-| Integrity (164.312(c)) | SQLite transactions and checksums exist, but no signed audit chain | Define integrity controls and evidence; a checksum alone is not an audit trail |
+| Audit controls (164.312(b)) | Hash-chain audit log with optional signed head; coverage is partial and external key pinning is required | Complete coverage for access, changes, exports and admin actions; protect and review logs (#15) |
+| Integrity (164.312(c)) | SQLite transactions and a partial hash-chain audit log exist; not independently assessed | Define integrity controls and evidence; a checksum alone is not an audit trail |
 | Person/entity authentication (164.312(d)) | No application authentication | Authenticate users and services at the deployment boundary |
 | Transmission security (164.312(e)) | Local stdio; sync transport is not a production secure transport | Protect any remote transport and peer links with authenticated encryption |
-| Contingency / backup | SQLite backup/restore is available in this branch | Encrypt backups, test restores, define RTO/RPO and retention |
+| Contingency / backup | SQLite backup/restore is available; SQLCipher remains experimental and backup encryption is not fully verified | Encrypt backups, test restores, define RTO/RPO and retention |
 | Device/media controls | Relies on host OS | Full-disk encryption, inventory, secure disposal, access-controlled backups |
 | Deletion / amendment | Application fact purge and vector deletion are implemented; replicas/backups have separate lifecycles | Define retention, deletion propagation, legal holds, backup expiry (#11, #12) |
 

@@ -38,9 +38,15 @@ impl Database {
                 .execute(&mut *tx)
                 .await?;
             sqlx::query("INSERT OR REPLACE INTO facts_tombstone (name, actor, reason) VALUES (?, 'local', 'prefix_delete')")
-                .bind(&name)
-                .execute(&mut *tx)
-                .await?;
+                .bind(&name).execute(&mut *tx).await?;
+            super::audit::append_tx(
+                &mut tx,
+                &super::audit::actor(),
+                "fact.delete",
+                &name,
+                serde_json::json!({"reason": "prefix_delete"}),
+            )
+            .await?;
         }
         tx.commit().await?;
         Ok(count)

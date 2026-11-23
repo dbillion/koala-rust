@@ -12,10 +12,14 @@ key ceremony, and no external signing-key lifecycle. Do not market or deploy it 
 
 ## Offline and supply-chain posture
 
-A cached embedding model can be used without network access, but first-run model acquisition and
-registry updates still use the network. A true air-gap build, reproducible supply chain, complete
-SBOM, signed artifacts, and offline model/plugin provisioning require further work. Release checksums
-are integrity metadata, not a signature or attestation.
+A no-network build is available with --no-default-features; it excludes reqwest, ureq, and
+Hugging Face Hub clients. Provision a local model with the network-enabled model fetch --to command,
+set KOALA_MODEL_DIR, and use --offline at runtime. Bundled plugins remain available while remote
+plugin installs are blocked. The release workflow generates a CycloneDX SBOM and keyless Sigstore
+signature for the SHA-256 checksum manifest, and the remember/recall path has passed inside an
+isolated unshare -Urn network namespace. SBOM coverage of bundled third-party runtime binaries and
+reproducible builds still need independent verification. This does not provide FIPS validation or
+hardware-backed key custody.
 
 ## Hardware and accreditation
 
@@ -28,7 +32,8 @@ itself. They require a system-level programme and independent assessment.
 - Written classification/CUI determination and approval from the system owner.
 - FIPS-validated crypto module where required, with validated configuration evidence.
 - External key custody, rotation, recovery, and incident procedures.
-- Complete SBOM, signed release artifacts, vulnerability response, and reproducible build evidence.
+- Independently reviewed SBOM coverage (including bundled runtime binaries), signed release artifacts,
+  vulnerability response, and reproducible build evidence.
 - Identity, least privilege, audit, retention, secure deletion, and immutable backup controls.
 - Independent penetration test and formal authorization/accreditation process.
 

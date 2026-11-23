@@ -26,13 +26,14 @@ Assets to protect:
    running as the same user can read or modify the database.
 3. **Registry/model downloads to local storage:** downloaded content crosses a network trust
    boundary. Plugin artifacts require a pinned SHA-256 digest in the current branch; a checksum
-   provides integrity only if the registry/digest source is trusted. Model-download authenticity
-   and offline first-run provisioning need separate review.
+   provides integrity only if the registry/digest source is trusted. A no-network build and
+   KOALA_MODEL_DIR runtime path are available; model provisioning still requires a connected
+   machine. Remember/recall was verified in an isolated unshare -Urn network namespace.
 4. **Plugin runtime:** WASM modules are instantiated by Wasmtime with a deliberately small linker
    and no WASI filesystem/network imports. Native dynamic libraries, where enabled, execute with
    the process's full OS privileges and are fully trusted code.
 5. **Backup and release distribution:** backups contain the same sensitive data as the source DB.
-   Release checksums are public integrity metadata, not confidentiality controls or signatures.
+   Release checksums and the keyless Sigstore bundle authenticate release artifacts; neither provides confidentiality.
 
 ## Adversaries and assumptions
 
@@ -59,14 +60,14 @@ have passed independent security testing. See the linked issues and CI evidence.
 
 | Area | Current limitation | Required follow-up |
 |---|---|---|
-| Confidentiality | No database-level encryption or key rotation | #14; host full-disk encryption is the interim control |
+| Confidentiality | Opt-in SQLCipher is experimental; application/vector/backup/rekey and key-provider coverage is incomplete | #14; host full-disk encryption is the interim control |
 | Authorization | No caller identity, clearance, labels, or tenant isolation | #16 |
-| Audit | No append-only signed event chain | #15 |
+| Audit | Hash-chain log, append-only triggers and optional signed head exist; raw SQL and external database edits can bypass application events, and external key pinning is required for signer trust | #15 |
 | Erasure | Historical rows and SQLite pages require purge verification; remote replicas/backups need separate lifecycle controls | #11, #12 |
-| Retention | No per-fact TTL policy yet | #12 |
+| Retention | Per-fact TTL, sweeping and tombstones are implemented; remote replica and backup lifecycle remains separate | #12 |
 | Historical recall | Point-in-time search is not a compliance-grade audit record | #13 |
-| Plugins | SHA-256 is not a signature; native code remains privileged; resource limits and signature trust need review | #17, #29 |
-| Operations | Fuzzing, full unsafe audit, concurrency stress, and SBOM/signing workflow need completion | #21, #24, #27 |
+| Plugins | Remote WASM installs require SHA-256 and Ed25519 verification; native code remains privileged and third-party WASM tool execution is not implemented | #17, #29 |
+| Operations | CI runs cargo-audit, cargo-deny, JSON-RPC and raw-SQL fuzz smoke tests, multi-process writer tests, CycloneDX SBOM generation, and keyless Sigstore checksum signing; native unsafe code is isolated in the documented plugin FFI module | Full independent security review and hardware/compliance work remain open (#21, #24, #27) |
 | Compliance | No independent assessment or certification | Organisation-specific work; not a binary feature |
 
 ## Deployment guidance

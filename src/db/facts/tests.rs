@@ -1,5 +1,17 @@
 use super::*;
-use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+
+async fn setup_audit(pool: &SqlitePool) {
+    sqlx::query("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, subject TEXT NOT NULL, details_json TEXT NOT NULL, previous_hash TEXT NOT NULL, entry_hash TEXT NOT NULL UNIQUE)").execute(pool).await.unwrap();
+    sqlx::query("CREATE TABLE audit_head (singleton INTEGER PRIMARY KEY, head_hash TEXT NOT NULL, key_id TEXT, public_key BLOB, signature BLOB, updated_at TEXT NOT NULL)").execute(pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO audit_head (singleton,head_hash,updated_at) VALUES (1,?,CURRENT_TIMESTAMP)",
+    )
+    .bind("0000000000000000000000000000000000000000000000000000000000000000")
+    .execute(pool)
+    .await
+    .unwrap();
+}
 
 #[tokio::test]
 async fn delete_fact_purges_all_versions_and_keeps_text_free_tombstone() {
@@ -8,6 +20,7 @@ async fn delete_fact_purges_all_versions_and_keeps_text_free_tombstone() {
         .connect("sqlite::memory:")
         .await
         .unwrap();
+    setup_audit(&pool).await;
     sqlx::query("CREATE TABLE facts (rowid INTEGER PRIMARY KEY, name TEXT, text TEXT, is_current BOOLEAN, expires_at DATETIME)")
             .execute(&pool).await.unwrap();
     sqlx::query("CREATE TABLE facts_tombstone (name TEXT PRIMARY KEY, deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP, actor TEXT NOT NULL DEFAULT 'local', reason TEXT NOT NULL DEFAULT 'user_requested')")
@@ -40,7 +53,13 @@ async fn delete_fact_purges_all_versions_and_keeps_text_free_tombstone() {
 #[cfg(test)]
 mod ttl_tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+
+    async fn setup_audit(pool: &SqlitePool) {
+        sqlx::query("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, subject TEXT NOT NULL, details_json TEXT NOT NULL, previous_hash TEXT NOT NULL, entry_hash TEXT NOT NULL UNIQUE)").execute(pool).await.unwrap();
+        sqlx::query("CREATE TABLE audit_head (singleton INTEGER PRIMARY KEY, head_hash TEXT NOT NULL, key_id TEXT, public_key BLOB, signature BLOB, updated_at TEXT NOT NULL)").execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO audit_head (singleton,head_hash,updated_at) VALUES (1,?,CURRENT_TIMESTAMP)").bind("0000000000000000000000000000000000000000000000000000000000000000").execute(pool).await.unwrap();
+    }
 
     #[tokio::test]
     async fn expired_current_fact_purges_history_and_records_tombstone() {
@@ -49,6 +68,7 @@ mod ttl_tests {
             .connect("sqlite::memory:")
             .await
             .unwrap();
+        setup_audit(&pool).await;
         sqlx::query("CREATE TABLE facts (rowid INTEGER PRIMARY KEY, name TEXT, text TEXT, is_current BOOLEAN, expires_at DATETIME)").execute(&pool).await.unwrap();
         sqlx::query("CREATE TABLE facts_tombstone (name TEXT PRIMARY KEY, deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP, actor TEXT NOT NULL DEFAULT 'local', reason TEXT NOT NULL DEFAULT 'user_requested')").execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO facts (name,text,is_current,expires_at) VALUES ('session','old',0,datetime('now','-2 days')),('session','new',1,datetime('now','-1 second'))").execute(&pool).await.unwrap();

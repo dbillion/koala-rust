@@ -146,15 +146,15 @@ def command_help():
             timeout=30, env=help_env,
         )
         result[command] = help_result.stdout
-        if command == "context":
+        if command in {"context", "model"}:
             for action in names(help_result.stdout):
                 if action == "help":
                     continue
                 nested = subprocess.run(
-                    [str(BINARY), "context", action, "--help"],
+                    [str(BINARY), command, action, "--help"],
                     check=True, capture_output=True, text=True, timeout=30, env=help_env,
                 )
-                result[f"context {action}"] = nested.stdout
+                result[f"{command} {action}"] = nested.stdout
     result["<root>"] = root_help.stdout
     return result
 
@@ -264,6 +264,7 @@ def capture_cli(state):
         "embed-text": "requires a pretrained Model2Vec model",
         "embed-batch": "requires a pretrained Model2Vec model",
         "plugin-update-registry": "contacts the public registry",
+        "model-fetch": "downloads model files from Hugging Face",
     }
     db = state / "koala.db"
     connection = sqlite3.connect(db)

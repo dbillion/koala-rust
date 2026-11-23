@@ -72,6 +72,8 @@ pub struct PluginVTablePtr(pub *mut PluginVTable);
 // outlives the plugin; all dereferences are serialized by PluginManager's lock.
 #[cfg(feature = "native-plugins")]
 unsafe impl Send for PluginVTablePtr {}
+// SAFETY: the vtable is immutable after initialization and all calls through
+// it are serialized by PluginManager's lock.
 #[cfg(feature = "native-plugins")]
 unsafe impl Sync for PluginVTablePtr {}
 
@@ -98,7 +100,12 @@ pub struct PluginState {
     pub last_error: Option<String>,
 }
 
-/// Native plugin vtable (C-compatible)
+/// Native plugin vtable (C-compatible).
+///
+/// # Safety contract
+/// Every pointer must be valid for the lifetime of the loaded library. String
+/// pointers must be NUL-terminated, callbacks must use this ABI, and plugin_init
+/// must return a non-null pointer to an immutable, static vtable.
 #[repr(C)]
 pub struct PluginVTable {
     pub name: *const std::os::raw::c_char,
@@ -243,46 +250,73 @@ impl PluginManager {
         let lib_path = self.native_lib_dir.join(lib_name);
         info!("Loading native plugin: {:?}", lib_path);
 
+        // SAFETY: loading a native library executes trusted platform loader
+        // code; this API is compiled only with the explicit native-plugins feature.
         let library = unsafe { Library::new(&lib_path)? };
 
-        // Get init function
+        // SAFETY: plugin ABI requires an exported plugin_init with this exact
+        // signature; the Library remains alive for the entire plugin lifetime.
         let init_fn: Symbol<unsafe fn() -> *mut PluginVTable> =
             unsafe { library.get(b"plugin_init")? };
+        // SAFETY: calling the function is permitted only for a trusted plugin
+        // that implements the documented C ABI.
         let vtable_ptr = unsafe { init_fn() };
+        if vtable_ptr.is_null() {
+            anyhow::bail!("Native plugin returned a null vtable");
+        }
+        // SAFETY: plugin ABI requires plugin_init to return a static, aligned,
+        // non-null vtable that remains valid while its Library is loaded.
         let vtable = unsafe { &*vtable_ptr };
 
-        // Get manifest
+        if vtable.name.is_null() || vtable.version.is_null() {
+            anyhow::bail!("Native plugin returned a null name or version");
+        }
+        // SAFETY: the ABI contract requires these pointers to reference
+        // NUL-terminated strings valid for the lifetime of the loaded library.
         let name = unsafe {
             std::ffi::CStr::from_ptr(vtable.name)
                 .to_string_lossy()
                 .to_string()
         };
+        // SAFETY: same string lifetime and termination contract as vtable.name.
         let version = unsafe {
             std::ffi::CStr::from_ptr(vtable.version)
                 .to_string_lossy()
                 .to_string()
         };
 
-        // Get tool definitions
+        // Query the number of tools. The ABI explicitly permits a null output
+        // pointer for this count-only call.
         let mut tool_count = 0u32;
-        let tools_ptr = std::ptr::null_mut();
-        let result = unsafe { (vtable.get_tools)(vtable.user_data, tools_ptr, &mut tool_count) };
+        // SAFETY: vtable is valid and get_tools supports the count-only call.
+        let result =
+            unsafe { (vtable.get_tools)(vtable.user_data, std::ptr::null_mut(), &mut tool_count) };
         if result != 0 {
             anyhow::bail!("Failed to get tool count");
         }
+        if tool_count > 1024 {
+            anyhow::bail!("Native plugin declared too many tools: {tool_count}");
+        }
 
-        let mut tools_vec = Vec::with_capacity(tool_count as usize);
-        let mut v: Vec<std::mem::MaybeUninit<ToolDefinition>> = (0..tool_count as usize)
+        let capacity = tool_count as usize;
+        let mut v: Vec<std::mem::MaybeUninit<ToolDefinition>> = (0..capacity)
             .map(|_| std::mem::MaybeUninit::uninit())
             .collect();
-        let tools_ptr = v.as_mut_ptr() as *mut ToolDefinition;
+        let tools_ptr = v.as_mut_ptr().cast::<ToolDefinition>();
+        // SAFETY: tools_ptr addresses capacity writable ToolDefinition slots;
+        // the ABI requires get_tools to initialize exactly the returned count.
         let result = unsafe { (vtable.get_tools)(vtable.user_data, tools_ptr, &mut tool_count) };
         if result != 0 {
             anyhow::bail!("Failed to get tools");
         }
+        if tool_count as usize > capacity {
+            anyhow::bail!("Native plugin wrote more tools than the supplied buffer");
+        }
 
-        for i in 0..tool_count as usize {
-            tools_vec.push(unsafe { std::ptr::read(tools_ptr.add(i)) });
+        let mut tools_vec = Vec::with_capacity(tool_count as usize);
+        for item in v.into_iter().take(tool_count as usize) {
+            // SAFETY: successful get_tools promises each returned slot is initialized.
+            tools_vec.push(unsafe { item.assume_init() });
         }
 
         let manifest = PluginManifest {

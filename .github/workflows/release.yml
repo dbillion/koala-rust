@@ -191,6 +191,8 @@ jobs:
           ls -la target/${{ matrix.target }}/release/
 
       - name: Prepare and smoke-test release bundle
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           mkdir -p artifacts bundle/licenses/sqlite-vec
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -221,6 +223,26 @@ jobs:
           tar -czf "artifacts/koala-rust-${{ matrix.target }}.tar.gz" \
             -C bundle "$binary" "vec0.$extension" "licenses/sqlite-vec"
           tar -tzf "artifacts/koala-rust-${{ matrix.target }}.tar.gz"
+
+          # Publish a second executable with all HTTP/model-hub clients compiled out.
+          cargo build --locked --release --no-default-features --target "$TARGET"
+          mkdir -p offline-bundle/licenses/sqlite-vec
+          offline_binary="koala-rust-offline"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            offline_binary="$offline_binary.exe"
+            cp "target/$TARGET/release/koala-rust.exe" "offline-bundle/$offline_binary"
+            cp "offline-bundle/$offline_binary" "artifacts/koala-rust-offline-$TARGET.exe"
+          else
+            cp "target/$TARGET/release/koala-rust" "offline-bundle/$offline_binary"
+            chmod +x "offline-bundle/$offline_binary"
+            cp "offline-bundle/$offline_binary" "artifacts/koala-rust-offline-$TARGET"
+          fi
+          cp "sqlite-vec/vec0.$extension" "offline-bundle/vec0.$extension"
+          cp third-party/sqlite-vec/LICENSE-* third-party/sqlite-vec/NOTICE.md offline-bundle/licenses/sqlite-vec/
+          python tests/release_smoke.py "$PWD/offline-bundle/$offline_binary" "$PWD/$raw_extension"
+          tar -czf "artifacts/koala-rust-offline-$TARGET.tar.gz" \
+            -C offline-bundle "$offline_binary" "vec0.$extension" "licenses/sqlite-vec"
+          tar -tzf "artifacts/koala-rust-offline-$TARGET.tar.gz"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -273,11 +295,21 @@ jobs:
             koala-rust-x86_64-apple-darwin
             koala-rust-aarch64-apple-darwin
             koala-rust-x86_64-pc-windows-msvc.exe
+            koala-rust-offline-x86_64-unknown-linux-gnu
+            koala-rust-offline-aarch64-unknown-linux-gnu
+            koala-rust-offline-x86_64-apple-darwin
+            koala-rust-offline-aarch64-apple-darwin
+            koala-rust-offline-x86_64-pc-windows-msvc.exe
             koala-rust-x86_64-unknown-linux-gnu.tar.gz
             koala-rust-aarch64-unknown-linux-gnu.tar.gz
             koala-rust-x86_64-apple-darwin.tar.gz
             koala-rust-aarch64-apple-darwin.tar.gz
             koala-rust-x86_64-pc-windows-msvc.tar.gz
+            koala-rust-offline-x86_64-unknown-linux-gnu.tar.gz
+            koala-rust-offline-aarch64-unknown-linux-gnu.tar.gz
+            koala-rust-offline-x86_64-apple-darwin.tar.gz
+            koala-rust-offline-aarch64-apple-darwin.tar.gz
+            koala-rust-offline-x86_64-pc-windows-msvc.tar.gz
             vec0-x86_64-unknown-linux-gnu.so
             vec0-aarch64-unknown-linux-gnu.so
             vec0-x86_64-apple-darwin.dylib
@@ -417,6 +449,8 @@ jobs:
             ```
 
             Raw executables and platform-specific sqlite-vec libraries are also published separately for advanced/manual installations.
+
+            Air-gapped runtime: each platform also has a koala-rust-offline executable and archive. This build has the net feature disabled, so HTTP clients are not linked. Provision Model2Vec files once with the network-enabled executable using model fetch --to ~/.cache/koala-model, then set KOALA_MODEL_DIR=~/.cache/koala-model and run the offline executable with --offline. Keep the matching vec0 library beside the executable or select it with KOALA_VEC0_PATH.
 
             **Via Cargo:** Source installs must also install a compatible sqlite-vec extension and set `KOALA_VEC0_PATH` to its full path.
             ```bash

@@ -1,9 +1,10 @@
-use super::{Database, EntityNode, Relation};
+mod open_nodes;
+
+use super::Database;
 use anyhow::Result;
 use sqlx::Row;
 
 impl Database {
-    // ===== ENTITIES =====
     pub async fn create_entity(
         &self,
         name: &str,
@@ -20,7 +21,6 @@ impl Database {
         .bind(project)
         .fetch_one(&mut *tx)
         .await?;
-
         let rowid: i64 = row.get("rowid");
         for obs in observations {
             sqlx::query("INSERT INTO observations (entity_name, content) VALUES (?, ?)")
@@ -29,6 +29,8 @@ impl Database {
                 .execute(&mut *tx)
                 .await?;
         }
+        super::audit::append_tx(&mut tx, &super::audit::actor(), "entity.create", name,
+            serde_json::json!({"rowid": rowid, "type": type_, "project": project, "observations": observations.len()})).await?;
         tx.commit().await?;
         Ok(rowid)
     }
@@ -45,49 +47,17 @@ impl Database {
                     .await?;
             added += result.rows_affected() as i64;
         }
+        if added > 0 {
+            super::audit::append_tx(
+                &mut tx,
+                &super::audit::actor(),
+                "entity.observations.add",
+                name,
+                serde_json::json!({"count": added}),
+            )
+            .await?;
+        }
         tx.commit().await?;
         Ok(added)
-    }
-
-    pub async fn open_nodes(&self, names: &[String]) -> Result<Vec<EntityNode>> {
-        let mut results = Vec::new();
-        for name in names {
-            if let Some(entity) =
-                sqlx::query("SELECT name, type, project FROM entities WHERE name = ?")
-                    .bind(name)
-                    .fetch_optional(&self.pool)
-                    .await?
-            {
-                let observations: Vec<String> =
-                    sqlx::query("SELECT content FROM observations WHERE entity_name = ?")
-                        .bind(name)
-                        .fetch_all(&self.pool)
-                        .await?
-                        .into_iter()
-                        .map(|r| r.get("content"))
-                        .collect();
-
-                let relations: Vec<Relation> = sqlx::query("SELECT from_entity, to_entity, rel_type FROM relations WHERE from_entity = ? OR to_entity = ?")
-                    .bind(name)
-                    .bind(name)
-                    .fetch_all(&self.pool).await?
-                    .into_iter()
-                    .map(|r| Relation {
-                        from: r.get("from_entity"),
-                        to: r.get("to_entity"),
-                        rel_type: r.get("rel_type"),
-                    })
-                    .collect();
-
-                results.push(EntityNode {
-                    name: entity.get("name"),
-                    type_: entity.get("type"),
-                    project: entity.get("project"),
-                    observations,
-                    relations,
-                });
-            }
-        }
-        Ok(results)
     }
 }
