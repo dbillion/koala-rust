@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For security problems please use a private advisory, see SECURITY.md.
+        Please use made-up data. Do not paste real personal, patient or financial information.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `koala-rust --version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and CPU
+      placeholder: Linux x86_64, macOS arm64, Windows 11 ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands or MCP calls. A throwaway state dir is best (`KOALA_STATE_DIR=$(mktemp -d)`).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include error text or output.
+    validations:
+      required: true
