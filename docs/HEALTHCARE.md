@@ -16,7 +16,7 @@ privacy, security, legal, and compliance owners approve the complete deployment.
 | Transmission security (164.312(e)) | Local stdio; sync transport is not a production secure transport | Protect any remote transport and peer links with authenticated encryption |
 | Contingency / backup | SQLite backup/restore is available in this branch | Encrypt backups, test restores, define RTO/RPO and retention |
 | Device/media controls | Relies on host OS | Full-disk encryption, inventory, secure disposal, access-controlled backups |
-| Deletion / amendment | Fact purge is being implemented; replicas/backups have separate lifecycles | Define retention, deletion propagation, legal holds, backup expiry (#11, #12) |
+| Deletion / amendment | Application fact purge and vector deletion are implemented; replicas/backups have separate lifecycles | Define retention, deletion propagation, legal holds, backup expiry (#11, #12) |
 
 ## BAA and hosting question
 

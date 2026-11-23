@@ -4,6 +4,9 @@ CREATE INDEX idx_embedding_metadata_source ON embedding_metadata(source_type, so
 -- index: idx_facts_current (facts)
 CREATE INDEX idx_facts_current ON facts(is_current);
 
+-- index: idx_facts_expires_at (facts)
+CREATE INDEX idx_facts_expires_at ON facts(expires_at);
+
 -- index: idx_facts_name (facts)
 CREATE INDEX idx_facts_name ON facts(name);
 
@@ -88,15 +91,13 @@ CREATE TABLE facts (
                 text TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 is_current BOOLEAN DEFAULT 1
-            );
+            , expires_at DATETIME);
 
 -- table: facts_tombstone (facts_tombstone)
 CREATE TABLE facts_tombstone (
                 name TEXT PRIMARY KEY,
-                deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                actor TEXT NOT NULL DEFAULT 'local',
-                reason TEXT NOT NULL DEFAULT 'user_requested'
-            );
+                deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            , actor TEXT NOT NULL DEFAULT 'local', reason TEXT NOT NULL DEFAULT 'user_requested');
 
 -- table: model_weights (model_weights)
 CREATE TABLE model_weights (
