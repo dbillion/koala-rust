@@ -46,6 +46,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::path::PathBuf;
 
 use koala_rust::{mcp::run_stdio, Koala};
@@ -97,6 +98,9 @@ enum Command {
         /// Fact name
         #[arg(long)]
         name: String,
+        /// Read the latest version that existed at this RFC3339/SQLite timestamp
+        #[arg(long)]
+        as_of: Option<String>,
     },
     /// List all facts
     FactList,
@@ -300,6 +304,37 @@ enum Command {
         texts: Vec<String>,
     },
 
+    // === Semantic memory tools ===
+    /// Remember a fact and create its semantic embedding
+    Remember {
+        /// Fact name
+        #[arg(long)]
+        name: String,
+        /// Fact text
+        #[arg(long)]
+        text: String,
+        /// Optional time-to-live in seconds (overrides per-label defaults)
+        #[arg(long)]
+        ttl_seconds: Option<i64>,
+    },
+    /// Purge expired facts and their vectors immediately
+    SweepExpired,
+    /// Recall facts by semantic query without supplying raw vectors
+    Recall {
+        /// Natural-language search query
+        #[arg(long)]
+        query: String,
+        /// Number of results
+        #[arg(long, default_value = "5")]
+        k: usize,
+        /// Keyword overlap weight
+        #[arg(long, default_value = "0.35")]
+        keyword_weight: f32,
+        /// Restrict recall to the newest fact versions known at this timestamp
+        #[arg(long)]
+        as_of: Option<String>,
+    },
+
     // === Vector search tools ===
     /// Upsert fact embedding for vector search
     VectorUpsertFact {
@@ -307,13 +342,13 @@ enum Command {
         #[arg(long)]
         fact_id: i64,
         /// Embedding vector (comma-separated floats)
-        #[arg(long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         embedding: Vec<f32>,
     },
     /// Search facts by vector similarity
     VectorSearchFacts {
         /// Query embedding (comma-separated floats)
-        #[arg(long, value_delimiter = ',')]
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         query_embedding: Vec<f32>,
         /// Number of results
         #[arg(long, default_value = "5")]
@@ -424,6 +459,20 @@ enum Command {
     /// Health check
     Health,
 
+    // === Database maintenance ===
+    /// Create a consistent SQLite backup
+    DbBackup {
+        /// Destination path (must not exist)
+        #[arg(long)]
+        path: PathBuf,
+    },
+    /// Restore the database from a verified SQLite backup
+    DbRestore {
+        /// Backup file path
+        #[arg(long)]
+        path: PathBuf,
+    },
+
     // === SQL ===
     /// Run raw SQL query
     Sql {
@@ -512,6 +561,16 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&state_dir)?;
 
+    // Restore must run before Koala opens the destination database.
+    if let Some(Command::DbRestore { path }) = cli.command.as_ref() {
+        restore_database(&state_dir, path).await?;
+        print_output(
+            cli.format,
+            serde_json::json!({"restored": true, "from": path}),
+        );
+        return Ok(());
+    }
+
     let mut brain = Koala::new(state_dir.clone()).await?;
 
     // MCP server mode (full 53 tools)
@@ -535,6 +594,50 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Validate a backup before atomically replacing the active database file.
+async fn restore_database(state_dir: &std::path::Path, backup: &std::path::Path) -> Result<()> {
+    if !backup.is_file() {
+        anyhow::bail!("backup file does not exist: {}", backup.display());
+    }
+    let mut options = SqliteConnectOptions::new().filename(backup).read_only(true);
+    if cfg!(feature = "sqlcipher") {
+        let key = std::env::var("KOALA_DB_KEY").map_err(|_| {
+            anyhow::anyhow!("KOALA_DB_KEY must be set when using the sqlcipher feature")
+        })?;
+        if key.is_empty() {
+            anyhow::bail!("KOALA_DB_KEY must not be empty");
+        }
+        options = options.pragma("key", format!("'{}'", key.replace('\'', "''")));
+    }
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(options)
+        .await?;
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&pool)
+        .await?;
+    if integrity != "ok" {
+        pool.close().await;
+        anyhow::bail!("backup failed SQLite integrity_check: {}", integrity);
+    }
+    pool.close().await;
+
+    let destination = state_dir.join("koala.db");
+    let temporary = state_dir.join("koala.db.restore.tmp");
+    if temporary.exists() {
+        std::fs::remove_file(&temporary)?;
+    }
+    std::fs::copy(backup, &temporary)?;
+    std::fs::File::open(&temporary)?.sync_all()?;
+    if destination.exists() {
+        let stamp = chrono::Utc::now().timestamp_millis();
+        let previous = state_dir.join(format!("koala.db.pre-restore-{}.bak", stamp));
+        std::fs::rename(&destination, previous)?;
+    }
+    std::fs::rename(&temporary, &destination)?;
+    Ok(())
+}
+
 /// Execute a CLI command
 async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) -> Result<()> {
     match cmd {
@@ -546,18 +649,23 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
                 serde_json::json!({"id": id, "name": name, "status": "written"}),
             );
         }
-        Command::FactRead { name } => {
-            if let Some((id, text)) = brain.db.read_fact(&name).await? {
-                print_output(
-                    format,
-                    serde_json::json!({"id": id, "name": name, "text": text}),
-                );
+        Command::FactRead { name, as_of } => {
+            let result = if let Some(timestamp) = as_of {
+                brain.db.read_fact_as_of(&name, &timestamp).await?
+                    .map(|(id, text, created_at)| serde_json::json!({"id": id, "name": name, "text": text, "created_at": created_at, "as_of": timestamp}))
             } else {
-                print_output(
-                    format,
-                    serde_json::json!({"error": "Fact not found", "name": name}),
-                );
-            }
+                brain
+                    .db
+                    .read_fact(&name)
+                    .await?
+                    .map(|(id, text)| serde_json::json!({"id": id, "name": name, "text": text}))
+            };
+            print_output(
+                format,
+                result.unwrap_or_else(
+                    || serde_json::json!({"error": "Fact not found", "name": name}),
+                ),
+            );
         }
         Command::FactList => {
             let facts = brain.db.list_facts().await?;
@@ -579,6 +687,45 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
             print_output(
                 format,
                 serde_json::json!({"deleted": count, "prefix": prefix}),
+            );
+        }
+        Command::Remember {
+            name,
+            text,
+            ttl_seconds,
+        } => {
+            let rowid = if let Some(ttl) = ttl_seconds {
+                brain
+                    .remember_semantic_with_ttl(&name, &text, Some(ttl))
+                    .await?
+            } else {
+                brain.remember_semantic(&name, &text).await?
+            };
+            print_output(
+                format,
+                serde_json::json!({"rowid": rowid, "name": name, "status": "remembered", "ttl_seconds": ttl_seconds}),
+            );
+        }
+        Command::SweepExpired => {
+            let purged = brain.sweep_expired_facts().await?;
+            print_output(format, serde_json::json!({"purged_rows": purged}));
+        }
+        Command::Recall {
+            query,
+            k,
+            keyword_weight,
+            as_of,
+        } => {
+            let results = if let Some(timestamp) = as_of {
+                brain
+                    .recall_as_of(&query, k, keyword_weight, &timestamp)
+                    .await?
+            } else {
+                brain.recall(&query, k, keyword_weight).await?
+            };
+            print_output(
+                format,
+                serde_json::json!({"query": query, "results": results}),
             );
         }
 
@@ -834,6 +981,13 @@ async fn execute_command(brain: &mut Koala, cmd: Command, format: OutputFormat) 
             print_output(format, serde_json::json!(health));
         }
 
+        // Database maintenance
+        Command::DbBackup { path } => {
+            brain.db.backup_to(&path).await?;
+            print_output(format, serde_json::json!({"backup": path, "created": true}));
+        }
+        Command::DbRestore { .. } => unreachable!("restore is handled before opening the database"),
+
         // SQL
         Command::Sql { query } => {
             let rows = brain.db.raw_sql(&query).await?;
@@ -933,5 +1087,93 @@ fn print_output(format: OutputFormat, value: serde_json::Value) {
                 println!("{}", value);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn vector_search_accepts_negative_embedding_components() {
+        let args = Args::try_parse_from([
+            "koala-rust",
+            "vector-search-facts",
+            "--query-embedding",
+            "-0.5,0.25",
+        ])
+        .expect("negative vector values are positional values, not flags");
+        match args.command {
+            Some(Command::VectorSearchFacts {
+                query_embedding, ..
+            }) => {
+                assert_eq!(query_embedding, vec![-0.5, 0.25]);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[cfg(not(feature = "sqlcipher"))]
+    #[tokio::test]
+    async fn restore_replaces_database_only_after_integrity_check() {
+        let root = std::env::temp_dir().join(format!("koala-restore-{}", uuid::Uuid::new_v4()));
+        let state_dir = root.join("state");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let backup_path = root.join("backup.db");
+
+        let backup = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&backup_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE facts (name TEXT, text TEXT)")
+            .execute(&backup)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO facts VALUES ('restored','new data')")
+            .execute(&backup)
+            .await
+            .unwrap();
+        backup.close().await;
+
+        let current_path = state_dir.join("koala.db");
+        let current = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&current_path)
+                    .create_if_missing(true),
+            )
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE old_data (value TEXT)")
+            .execute(&current)
+            .await
+            .unwrap();
+        current.close().await;
+
+        restore_database(&state_dir, &backup_path).await.unwrap();
+        let restored = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&current_path)
+                    .read_only(true),
+            )
+            .await
+            .unwrap();
+        let text: String = sqlx::query_scalar("SELECT text FROM facts WHERE name='restored'")
+            .fetch_one(&restored)
+            .await
+            .unwrap();
+        assert_eq!(text, "new data");
+        assert_eq!(std::fs::read_dir(&state_dir).unwrap().count(), 2);
+        restored.close().await;
+        let _ = std::fs::remove_dir_all(root);
     }
 }

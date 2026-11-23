@@ -242,7 +242,7 @@ impl VectorEngine {
                 "SELECT rowid as id, distance as score, '{filter}' as metadata 
                  FROM fact_embeddings 
                  WHERE embedding MATCH ? 
-                 AND rowid IN (SELECT rowid FROM facts WHERE {filter}) 
+                 AND rowid IN (SELECT rowid FROM facts WHERE {filter} AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP))
                  ORDER BY distance ASC 
                  LIMIT ?"
             )

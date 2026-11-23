@@ -15,7 +15,7 @@ impl Database {
             .map(|_| "(instr(lower(replace(name, '_', ' ')), ?) > 0 OR instr(lower(text), ?) > 0)")
             .collect::<Vec<_>>()
             .join(" OR ");
-        let sql = format!("SELECT rowid FROM facts WHERE is_current = 1 AND ({clause}) LIMIT ?");
+        let sql = format!("SELECT rowid FROM facts WHERE is_current = 1 AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP) AND ({clause}) LIMIT ?");
         let mut q = sqlx::query(&sql);
         for t in tokens {
             q = q.bind(t.clone()).bind(t.clone());
@@ -53,7 +53,19 @@ impl Database {
 
     /// Rowids of the current version(s) of a fact name.
     pub async fn current_fact_rowids(&self, name: &str) -> Result<Vec<i64>> {
-        let rows = sqlx::query("SELECT rowid FROM facts WHERE name = ? AND is_current = 1")
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name = ? AND is_current = 1 AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP)")
+            .bind(name)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.get("rowid")).collect())
+    }
+}
+
+impl Database {
+    /// Rowids for every retained version of a fact name. Used by the irreversible
+    /// purge path so historical vectors are removed along with historical text.
+    pub async fn fact_rowids(&self, name: &str) -> Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT rowid FROM facts WHERE name = ?")
             .bind(name)
             .fetch_all(&self.pool)
             .await?;

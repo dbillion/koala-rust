@@ -31,6 +31,35 @@ pub struct RecallHit {
     pub score: f32,
 }
 
+fn default_ttl_seconds(name: &str) -> Result<Option<i64>> {
+    let label = name.split(['/', ':']).next().unwrap_or(name);
+    let label_key: String = label
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let per_label = format!("KOALA_TTL_{}_SECONDS", label_key);
+    let configured =
+        std::env::var(&per_label).or_else(|_| std::env::var("KOALA_DEFAULT_TTL_SECONDS"));
+    match configured {
+        Ok(value) => {
+            let ttl: i64 = value
+                .parse()
+                .map_err(|_| anyhow::anyhow!("{} must be a positive integer", per_label))?;
+            if ttl <= 0 {
+                anyhow::bail!("{} must be greater than zero", per_label);
+            }
+            Ok(Some(ttl))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 fn embed_input(name: &str, text: &str) -> String {
     format!("{}: {}", name.replace('_', " "), text)
 }
@@ -100,6 +129,26 @@ impl Koala {
         if let Err(e) = plugin_manager.discover_plugins().await {
             tracing::warn!("Failed to discover plugins on startup: {}", e);
         }
+        // Installed builtins need their registry-owned manifest and tool schema
+        // reattached on every start. Generic discovery cannot infer that metadata
+        // from a bare .wasm file and would otherwise load an empty manifest.
+        if let Ok(entries) = plugin_registry.list().await {
+            for entry in entries {
+                if entry.download_url.starts_with("builtin://")
+                    && plugin_registry
+                        .wasm_module_dir()
+                        .join(format!("{}.wasm", entry.name))
+                        .is_file()
+                {
+                    if let Err(e) = plugin_manager
+                        .load_builtin_plugin(&entry.name, &plugin_registry)
+                        .await
+                    {
+                        tracing::warn!("Failed to load builtin plugin '{}': {}", entry.name, e);
+                    }
+                }
+            }
+        }
 
         let this = Self {
             db,
@@ -134,16 +183,30 @@ impl Koala {
             this.db.meta_set("embed_model", &model_id).await?;
         }
 
+        // Enforce TTL retention before exposing the database to MCP clients.
+        this.sweep_expired_facts().await?;
         Ok(this)
     }
 
-    /// Write a fact and embed it in one step. Replaces the vector of the
-    /// previous version of the same name. Returns the new rowid.
+    /// Write a fact using per-label or global TTL defaults from the environment.
     pub async fn remember_semantic(&self, name: &str, text: &str) -> Result<i64> {
+        let ttl_seconds = default_ttl_seconds(name)?;
+        self.remember_semantic_with_ttl(name, text, ttl_seconds)
+            .await
+    }
+
+    /// Write a fact with an explicit optional TTL in seconds. Replaces the
+    /// vector of the previous version of the same name and returns the rowid.
+    pub async fn remember_semantic_with_ttl(
+        &self,
+        name: &str,
+        text: &str,
+        ttl_seconds: Option<i64>,
+    ) -> Result<i64> {
         // Embed first: if the model fails, no fact is written without a vector.
         let emb = self.embed_text(&embed_input(name, text)).await?;
         let old = self.db.current_fact_rowids(name).await?;
-        let rowid = self.db.write_fact(name, text).await?;
+        let rowid = self.db.write_fact_with_ttl(name, text, ttl_seconds).await?;
         self.vector_upsert_fact(rowid, &emb).await?;
         for r in old {
             if r != rowid {
@@ -153,21 +216,33 @@ impl Koala {
         Ok(rowid)
     }
 
-    /// Delete the current version of a fact and its vector. The fact delete is
-    /// authoritative; a vector cleanup failure only leaves an orphan that
-    /// `recall` skips, so it is logged, not returned.
+    /// Purge expired fact versions, their vectors, and reclaim freed SQLite pages.
+    pub async fn sweep_expired_facts(&self) -> Result<usize> {
+        let rowids = self.db.purge_expired_facts().await?;
+        self.drop_vectors(&rowids).await;
+        if !rowids.is_empty() {
+            self.db.incremental_vacuum().await?;
+        }
+        Ok(rowids.len())
+    }
+
+    /// Permanently purge every version of a fact and all associated vectors.
+    /// SQLite secure_delete is enabled for the database pool; incremental vacuum
+    /// reclaims free pages after the vector rows have been removed.
     pub async fn delete_fact_and_vector(&self, name: &str) -> Result<bool> {
-        let rowids = self.db.current_fact_rowids(name).await?;
+        let rowids = self.db.fact_rowids(name).await?;
         let deleted = self.db.delete_fact(name).await?;
         self.drop_vectors(&rowids).await;
+        self.db.incremental_vacuum().await?;
         Ok(deleted)
     }
 
-    /// Prefix variant of `delete_fact_and_vector`. Returns the number of facts deleted.
+    /// Prefix variant of the permanent purge. Returns the number of fact names purged.
     pub async fn delete_fact_prefix_and_vectors(&self, prefix: &str) -> Result<i64> {
-        let rowids = self.db.current_fact_rowids_prefix(prefix).await?;
+        let rowids = self.db.fact_rowids_prefix(prefix).await?;
         let count = self.db.delete_fact_prefix(prefix).await?;
         self.drop_vectors(&rowids).await;
+        self.db.incremental_vacuum().await?;
         Ok(count)
     }
 
@@ -221,6 +296,63 @@ impl Koala {
 
     /// Hybrid search: vector distance, nudged by keyword overlap so exact
     /// names and ids that embeddings miss still rank. Lower score is better.
+    /// Semantic recall against the newest version of every fact at `as_of`.
+    /// Historical rows are re-embedded in bounded batches because the live
+    /// sqlite-vec index intentionally contains only current versions.
+    pub async fn recall_as_of(
+        &self,
+        query: &str,
+        k: usize,
+        keyword_weight: f32,
+        as_of: &str,
+    ) -> Result<Vec<RecallHit>> {
+        let query_embedding = self.embed_text(query).await?;
+        let facts = self.db.facts_as_of(as_of).await?;
+        let query_tokens = tokens(query);
+        let mut hits = Vec::with_capacity(facts.len());
+
+        for chunk in facts.chunks(128) {
+            let inputs: Vec<String> = chunk
+                .iter()
+                .map(|(_, name, text)| embed_input(name, text))
+                .collect();
+            let refs: Vec<&str> = inputs.iter().map(String::as_str).collect();
+            let embeddings = self.embed_batch(&refs).await?;
+            for ((rowid, name, text), embedding) in chunk.iter().zip(embeddings) {
+                if embedding.len() != query_embedding.len() {
+                    anyhow::bail!("Embedding dimension mismatch during point-in-time recall");
+                }
+                let distance = query_embedding
+                    .iter()
+                    .zip(&embedding)
+                    .map(|(a, b)| (a - b) * (a - b))
+                    .sum::<f32>()
+                    .sqrt();
+                let haystack = tokens(&format!("{} {}", name.replace('_', " "), text));
+                let overlap = if query_tokens.is_empty() {
+                    0.0
+                } else {
+                    query_tokens
+                        .iter()
+                        .filter(|token| haystack.contains(*token))
+                        .count() as f32
+                        / query_tokens.len() as f32
+                };
+                hits.push(RecallHit {
+                    rowid: *rowid,
+                    name: name.clone(),
+                    text: text.clone(),
+                    distance,
+                    keyword_overlap: overlap,
+                    score: distance - keyword_weight * overlap,
+                });
+            }
+        }
+        hits.sort_by(|a, b| a.score.total_cmp(&b.score));
+        hits.truncate(k);
+        Ok(hits)
+    }
+
     pub async fn recall(
         &self,
         query: &str,

@@ -1,7 +1,7 @@
 use anyhow::Result;
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, Transaction};
 
-pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
+pub(super) async fn run(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     // Small key/value store: embedding model identity and the reindex-pending marker.
     sqlx::query(
         r#"
@@ -11,7 +11,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
 
     // v0.4: Embedding metadata.
@@ -27,7 +27,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }

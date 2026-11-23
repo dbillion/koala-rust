@@ -21,7 +21,14 @@ pub struct PluginRegistryEntry {
     pub description: String,
     pub author: String,
     pub download_url: String, // "builtin://hash-tools" or "https://..."
+    #[serde(default)]
     pub sha256: Option<String>,
+    /// Base64-encoded Ed25519 signature over the exact WASM bytes.
+    #[serde(default)]
+    pub signature: Option<String>,
+    /// Key identifier resolved through KOALA_PLUGIN_TRUSTED_KEYS.
+    #[serde(default)]
+    pub key_id: Option<String>,
     pub plugin_type: String, // "wasm" or "native"
 }
 
@@ -70,11 +77,10 @@ impl PluginRegistry {
 
         let mut index = PluginIndex::load(&index_path).unwrap_or_default();
 
-        // Populate builtin plugins if registry is empty
-        if index.plugins.is_empty() {
-            Self::populate_builtin_plugins(&mut index);
-            index.save(&index_path)?;
-        }
+        // Merge builtin entries on every start. This also upgrades registries
+        // created by older releases where builtin SHA-256 values were absent.
+        Self::populate_builtin_plugins(&mut index);
+        index.save(&index_path)?;
 
         Ok(Self {
             index: Arc::new(RwLock::new(index)),
@@ -94,7 +100,9 @@ impl PluginRegistry {
                 description: "Cryptographic hash functions (MD5, SHA1, SHA256, SHA512)".to_string(),
                 author: "koala".to_string(),
                 download_url: "builtin://hash-tools".to_string(),
-                sha256: None,
+                sha256: Some(HASH_TOOLS_WASM_SHA256.to_string()),
+                signature: None,
+                key_id: None,
                 plugin_type: "wasm".to_string(),
             },
             PluginRegistryEntry {
@@ -103,7 +111,9 @@ impl PluginRegistry {
                 description: "Text transformation utilities (uppercase, lowercase, reverse, base64_encode, base64_decode)".to_string(),
                 author: "koala".to_string(),
                 download_url: "builtin://text-transform".to_string(),
-                sha256: None,
+                sha256: Some(TEXT_TRANSFORM_WASM_SHA256.to_string()),
+                signature: None,
+                key_id: None,
                 plugin_type: "wasm".to_string(),
             },
             PluginRegistryEntry {
@@ -112,13 +122,21 @@ impl PluginRegistry {
                 description: "JSON manipulation tools (query, transform, validate)".to_string(),
                 author: "koala".to_string(),
                 download_url: "builtin://json-tools".to_string(),
-                sha256: None,
+                sha256: Some(JSON_TOOLS_WASM_SHA256.to_string()),
+                signature: None,
+                key_id: None,
                 plugin_type: "wasm".to_string(),
             },
         ];
 
         for plugin in builtins {
-            index.plugins.insert(plugin.name.clone(), plugin);
+            let replace = index
+                .plugins
+                .get(&plugin.name)
+                .is_none_or(|existing| existing.download_url.starts_with("builtin://"));
+            if replace {
+                index.plugins.insert(plugin.name.clone(), plugin);
+            }
         }
     }
 
@@ -174,9 +192,23 @@ impl PluginRegistry {
         };
         let install_path = self.wasm_module_dir.join(&wasm_filename);
 
+        let expected_sha256 = plugin.sha256.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Plugin '{}' has no SHA-256 digest; refusing an unverifiable install",
+                name
+            )
+        })?;
         if install_path.exists() {
-            info!("Plugin '{}' already installed at {:?}", name, install_path);
-            return Ok(install_path);
+            let installed = std::fs::read(&install_path)?;
+            if self.compute_sha256(&installed) == expected_sha256 {
+                info!("Plugin '{}' already installed and checksum verified", name);
+                return Ok(install_path);
+            }
+            warn!(
+                "Installed plugin '{}' failed checksum verification; replacing it",
+                name
+            );
+            std::fs::remove_file(&install_path)?;
         }
 
         // Download or generate the plugin
@@ -186,17 +218,16 @@ impl PluginRegistry {
             self.download_wasm(&plugin.download_url).await?
         };
 
-        // Verify SHA256 if provided
-        if let Some(expected_sha256) = &plugin.sha256 {
-            let actual_sha256 = self.compute_sha256(&wasm_bytes);
-            if actual_sha256 != *expected_sha256 {
-                return Err(anyhow::anyhow!(
-                    "SHA256 mismatch for plugin '{}': expected {}, got {}",
-                    name,
-                    expected_sha256,
-                    actual_sha256
-                ));
-            }
+        // Every plugin must be pinned to a digest. Never install unsigned-by-
+        // digest registry entries or silently skip verification.
+        let actual_sha256 = self.compute_sha256(&wasm_bytes);
+        if actual_sha256 != expected_sha256 {
+            return Err(anyhow::anyhow!(
+                "SHA256 mismatch for plugin '{}': expected {}, got {}",
+                name,
+                expected_sha256,
+                actual_sha256
+            ));
         }
 
         // Write the WASM file
@@ -487,6 +518,49 @@ impl PluginRegistry {
     }
 
     /// Compute SHA256 hash
+    fn verify_plugin_signature(
+        &self,
+        plugin: &PluginRegistryEntry,
+        wasm_bytes: &[u8],
+    ) -> Result<()> {
+        // Builtins are compiled into this binary and pinned by build-time digest.
+        if plugin.download_url.starts_with("builtin://") {
+            return Ok(());
+        }
+        let key_id = plugin.key_id.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("Plugin '{}' is missing an Ed25519 key_id", plugin.name)
+        })?;
+        let signature = plugin.signature.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("Plugin '{}' is missing an Ed25519 signature", plugin.name)
+        })?;
+        let trusted_json = std::env::var("KOALA_PLUGIN_TRUSTED_KEYS")
+            .context("KOALA_PLUGIN_TRUSTED_KEYS must contain trusted Ed25519 public keys")?;
+        let trusted: HashMap<String, String> = serde_json::from_str(&trusted_json).context(
+            "KOALA_PLUGIN_TRUSTED_KEYS must be a JSON object of key IDs to base64 public keys",
+        )?;
+        let public_key = trusted.get(key_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Plugin '{}' uses untrusted signing key '{}'",
+                plugin.name,
+                key_id
+            )
+        })?;
+        let public_key = STANDARD
+            .decode(public_key)
+            .context("trusted Ed25519 public key is not valid base64")?;
+        let signature = STANDARD
+            .decode(signature)
+            .context("plugin Ed25519 signature is not valid base64")?;
+        UnparsedPublicKey::new(&ED25519, public_key)
+            .verify(wasm_bytes, &signature)
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Ed25519 signature verification failed for plugin '{}'",
+                    plugin.name
+                )
+            })
+    }
+
     fn compute_sha256(&self, data: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(data);
@@ -501,5 +575,46 @@ impl PluginRegistry {
     /// Get native module directory
     pub fn native_module_dir(&self) -> &Path {
         &self.native_module_dir
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use ring::signature::{Ed25519KeyPair, KeyPair};
+
+    #[tokio::test]
+    async fn remote_plugins_require_a_trusted_ed25519_signature() {
+        let seed = [7u8; 32];
+        let keypair = Ed25519KeyPair::from_seed_unchecked(&seed).unwrap();
+        let wasm = b"trusted plugin bytes";
+        let public_key = STANDARD.encode(keypair.public_key().as_ref());
+        let signature = STANDARD.encode(keypair.sign(wasm).as_ref());
+        std::env::set_var(
+            "KOALA_PLUGIN_TRUSTED_KEYS",
+            serde_json::json!({"release-2026": public_key}).to_string(),
+        );
+        let registry = PluginRegistryEntry {
+            name: "signed-plugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "test".to_string(),
+            author: "test".to_string(),
+            download_url: "https://example.invalid/plugin.wasm".to_string(),
+            sha256: Some(hex::encode(Sha256::digest(wasm))),
+            signature: Some(signature),
+            key_id: Some("release-2026".to_string()),
+            plugin_type: "wasm".to_string(),
+            dependencies: Vec::new(),
+        };
+        let root = std::env::temp_dir().join(format!("koala-signature-{}", uuid::Uuid::new_v4()));
+        let registry_store = PluginRegistry::new(&root).await.unwrap();
+        assert!(registry_store
+            .verify_plugin_signature(&registry, wasm)
+            .is_ok());
+        assert!(registry_store
+            .verify_plugin_signature(&registry, b"tampered bytes")
+            .is_err());
+        std::env::remove_var("KOALA_PLUGIN_TRUSTED_KEYS");
+        let _ = std::fs::remove_dir_all(root);
     }
 }

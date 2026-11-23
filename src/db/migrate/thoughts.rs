@@ -1,7 +1,7 @@
 use anyhow::Result;
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, Transaction};
 
-pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
+pub(super) async fn run(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     sqlx::query(
         r#"
             CREATE TABLE IF NOT EXISTS thoughts (
@@ -12,7 +12,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query(
@@ -24,7 +24,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
 
     sqlx::query(
@@ -37,7 +37,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }

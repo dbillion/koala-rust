@@ -1,4 +1,5 @@
 // build.rs - compile WAT plugins to WASM at build time and generate Rust module
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -33,11 +34,17 @@ fn main() {
             wasm_bytes.len()
         );
 
-        // Generate static byte array
+        // Generate static byte array and a build-time digest used to verify
+        // builtin plugin assets before they are written to the install dir.
         let const_name = name.replace("-", "_").to_uppercase();
+        let digest = hex::encode(Sha256::digest(&wasm_bytes));
         generated.push_str(&format!(
-            "pub const {}_WASM: &[u8] = include_bytes!(\"{}.wasm\");\n\n",
+            "pub const {}_WASM: &[u8] = include_bytes!(\"{}.wasm\");\n",
             const_name, name
+        ));
+        generated.push_str(&format!(
+            "pub const {}_WASM_SHA256: &str = \"{}\";\n\n",
+            const_name, digest
         ));
     }
 

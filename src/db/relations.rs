@@ -62,7 +62,7 @@ impl Database {
                 UNION
                 SELECT entity_name as name FROM observations WHERE content LIKE ?
                 UNION
-                SELECT name FROM facts WHERE name LIKE ? AND is_current = 1
+                SELECT name FROM facts WHERE name LIKE ? AND is_current = 1 AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP)
             ) LIMIT ?",
         )
         .bind(format!("%{}%", query))

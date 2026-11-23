@@ -56,6 +56,7 @@ impl KoalaServer {
             // v0.4: Embeddings
             "remember_semantic" => self.handle_remember_semantic(args).await,
             "recall" => self.handle_recall(args).await,
+            "sweep_expired_facts" => self.handle_sweep_expired_facts().await,
             "reindex_facts" => self.handle_reindex_facts().await,
             "embed_text" => self.handle_embed_text(args).await,
             "embed_batch" => self.handle_embed_batch(args).await,

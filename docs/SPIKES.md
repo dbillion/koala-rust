@@ -9,13 +9,12 @@ These findings were observed against the unmodified v0.3.3 application while bui
 - This means the documented multi-command CLI flow cannot share an initialized in-memory model. A later model/persistence phase should either persist initialization state or provide a single-session/combined command flow.
 - The baseline snapshots preserve these results until the behavior is deliberately corrected.
 
-## Built-in WASM plugin metadata is not loaded
+## Built-in WASM plugin metadata (fixed in the current issue branch)
 
-- The registry contains a valid `hash-tools` manifest and `hash` tool definition.
-- `plugin-install --name hash-tools` writes the WASM bytes, but does not pass the registry manifest/tool definitions to `PluginManager`.
-- Startup discovery calls `load_wasm_plugin(..., None, None)` for every installed WASM file. The existing `load_builtin_plugin` path, which supplies the registry metadata, is not called by startup or the CLI install command.
-- A subsequent `plugin-call --plugin hash-tools --tool hash` therefore fails with `Plugin not found: hash-tools`.
-- The plugin-runtime phase should wire installation/discovery to the registry metadata and add a deterministic invocation test; the builtin WASM itself is not the placeholder.
+- The registry contains the `hash-tools` manifest and tool definition.
+- Generic startup discovery originally loaded installed WASM files with `None` metadata, leaving an empty manifest.
+- The current issue branch reattaches registry metadata for installed builtins on startup, validates the generated WASM bytes against a build-time SHA-256 digest, and removes temporary debug output.
+- A regression test installs the builtin, exercises generic discovery, restores its manifest, and verifies SHA-256(`hello`). The WASM module is a metadata carrier; builtin hash computation is implemented in the host runtime. Arbitrary external WASM tool execution is still not implemented.
 
 ## Registry update is not a deterministic snapshot operation
 

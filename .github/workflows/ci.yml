@@ -73,6 +73,21 @@ jobs:
           KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
         run: python3 tests/snapshot_baseline.py
 
+      - name: End-to-end regression suite
+        env:
+          KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
+          KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+        run: python3 tests/e2e.py
+
+      - name: Python stdio client and adapter integration tests
+        env:
+          KOALA_BIN: ${{ github.workspace }}/target/debug/koala-rust
+          KOALA_VEC0_PATH: ${{ github.workspace }}/vec0.so
+        run: PYTHONPATH=python python3 -m unittest discover -s python/tests -v
+
+      - name: SQLCipher encryption integration test
+        run: cargo test --locked --features sqlcipher --lib encrypted_database_requires_the_correct_key_and_hides_plaintext
+
       - name: Test
         run: cargo test --locked --all-targets
 

@@ -1,8 +1,8 @@
 use anyhow::Result;
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, Transaction};
 
 // v0.5: Plugin metadata.
-pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
+pub(super) async fn run(tx: &mut Transaction<'_, Sqlite>) -> Result<()> {
     sqlx::query(
         r#"
             CREATE TABLE IF NOT EXISTS plugin_registry (
@@ -16,7 +16,7 @@ pub(super) async fn run(pool: &SqlitePool) -> Result<()> {
             )
         "#,
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }

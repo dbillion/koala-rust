@@ -10,6 +10,7 @@ pub(super) fn specs() -> Vec<Value> {
                 let mut p = Map::new();
                 p.insert("name".to_string(), json!({"type": "string"}));
                 p.insert("text".to_string(), json!({"type": "string"}));
+                p.insert("ttl_seconds".to_string(), json!({"type": "integer", "minimum": 1, "description": "Optional TTL in seconds; otherwise per-label/global environment defaults apply"}));
                 p
             },
             Some(vec!["name", "text"]),
@@ -28,6 +29,12 @@ pub(super) fn specs() -> Vec<Value> {
                 p
             },
             Some(vec!["query"]),
+        ),
+        tool(
+            "sweep_expired_facts",
+            "Permanently purge expired fact versions and associated vectors",
+            Map::new(),
+            None,
         ),
         tool(
             "reindex_facts",

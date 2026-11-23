@@ -93,7 +93,9 @@ CREATE TABLE facts (
 -- table: facts_tombstone (facts_tombstone)
 CREATE TABLE facts_tombstone (
                 name TEXT PRIMARY KEY,
-                deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                actor TEXT NOT NULL DEFAULT 'local',
+                reason TEXT NOT NULL DEFAULT 'user_requested'
             );
 
 -- table: model_weights (model_weights)

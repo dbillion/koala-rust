@@ -5,13 +5,17 @@
 
 use anyhow::Result;
 use dashmap::DashMap;
+#[cfg(feature = "native-plugins")]
 use libloading::{Library, Symbol};
+use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha1::Sha1;
+use sha2::{Digest, Sha256, Sha512};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::info;
-use wasmtime::{Caller, Config, Engine, Linker, Module, Store};
+use wasmtime::{Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
 
 /// Plugin metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,12 +64,15 @@ pub struct Plugin {
 /// (which is Send + Sync); the pointer is only dereferenced while the plugin
 /// manager holds its lock, so sharing it across threads is sound. Wrapping it
 /// makes the `!Send`/`!Sync` raw pointer type explicit.
+#[cfg(feature = "native-plugins")]
 #[derive(Debug, Clone, Copy)]
 pub struct PluginVTablePtr(pub *mut PluginVTable);
 
 // SAFETY: the pointee is a static vtable inside the loaded library and
 // outlives the plugin; all dereferences are serialized by PluginManager's lock.
+#[cfg(feature = "native-plugins")]
 unsafe impl Send for PluginVTablePtr {}
+#[cfg(feature = "native-plugins")]
 unsafe impl Sync for PluginVTablePtr {}
 
 /// Plugin type
@@ -75,6 +82,7 @@ pub enum PluginType {
         module: Module,
         instance_id: u64,
     },
+    #[cfg(feature = "native-plugins")]
     Native {
         library: Arc<Library>,
         init_fn: PluginVTablePtr,
@@ -197,6 +205,7 @@ pub struct PluginManager {
     plugins: DashMap<String, Plugin>,
     wasm_engine: Engine,
     wasm_host: Arc<WasmHost>,
+    #[cfg(feature = "native-plugins")]
     native_lib_dir: PathBuf,
     wasm_module_dir: PathBuf,
     next_instance_id: Arc<tokio::sync::Mutex<u64>>,
@@ -211,19 +220,25 @@ impl PluginManager {
         let mut config = Config::new();
         config.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
         config.async_support(true);
+        config.consume_fuel(true);
         let engine = Engine::new(&config)?;
 
+        #[cfg(not(feature = "native-plugins"))]
+        let _ = native_lib_dir;
         Ok(Self {
             plugins: DashMap::new(),
             wasm_engine: engine,
             wasm_host: Arc::new(wasm_host),
+            #[cfg(feature = "native-plugins")]
             native_lib_dir: native_lib_dir.as_ref().to_path_buf(),
             wasm_module_dir: wasm_module_dir.as_ref().to_path_buf(),
             next_instance_id: Arc::new(tokio::sync::Mutex::new(0)),
         })
     }
 
-    /// Load a native plugin (.so/.dll/.dylib)
+    /// Load a native plugin (.so/.dll/.dylib). Native code is opt-in because it
+    /// executes with the host process's full OS privileges.
+    #[cfg(feature = "native-plugins")]
     pub async fn load_native_plugin(&self, lib_name: &str) -> Result<()> {
         let lib_path = self.native_lib_dir.join(lib_name);
         info!("Loading native plugin: {:?}", lib_path);
@@ -299,6 +314,16 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Native plugins are disabled in default builds; rebuild explicitly with
+    /// `--features native-plugins` only for reviewed, trusted libraries.
+    #[cfg(not(feature = "native-plugins"))]
+    pub async fn load_native_plugin(&self, lib_name: &str) -> Result<()> {
+        let _ = lib_name;
+        anyhow::bail!(
+            "native plugins are disabled; rebuild with --features native-plugins to opt in"
+        )
+    }
+
     /// Load a WASM plugin (.wasm) with optional manifest/tools JSON override
     pub async fn load_wasm_plugin(
         &self,
@@ -308,10 +333,15 @@ impl PluginManager {
     ) -> Result<()> {
         let module_path = self.wasm_module_dir.join(module_name);
         info!("Loading WASM plugin: {:?}", module_path);
-        eprintln!("DEBUG: Loading WASM plugin: {:?}", module_path);
 
         let module = Module::from_file(&self.wasm_engine, &module_path)?;
-        let mut store = Store::new(&self.wasm_engine, ());
+        let limits = StoreLimitsBuilder::new()
+            .memory_size(64 * 1024 * 1024)
+            .table_elements(10_000)
+            .build();
+        let mut store = Store::new(&self.wasm_engine, limits);
+        store.limiter(|limits| limits);
+        store.set_fuel(1_000_000)?;
 
         // Create linker with host functions
         let mut linker = Linker::new(&self.wasm_engine);
@@ -322,103 +352,55 @@ impl PluginManager {
 
         // Get allocate function to allocate memory in WASM for JSON data
         let allocate = instance.get_typed_func::<(i32,), (i32,)>(&mut store, "allocate")?;
-        eprintln!("DEBUG: Got allocate function");
 
         // Get set_manifest and set_tools functions (exported by WASM)
         let set_manifest = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_manifest")?;
         let set_tools = instance.get_typed_func::<(i32, i32), ()>(&mut store, "set_tools")?;
-        eprintln!("DEBUG: Got set_manifest and set_tools functions");
 
         // Write manifest JSON: allocate in WASM memory, copy data, register pointer
         let manifest_json = manifest_json.unwrap_or_else(|| serde_json::json!({}));
         let manifest_bytes = serde_json::to_vec(&manifest_json)?;
-        eprintln!(
-            "DEBUG: Manifest JSON bytes: {} bytes, content: {}",
-            manifest_bytes.len(),
-            String::from_utf8_lossy(&manifest_bytes)
-        );
         let manifest_ptr = allocate
             .call_async(&mut store, (manifest_bytes.len() as i32,))
             .await?
             .0;
-        eprintln!("DEBUG: Allocated manifest_ptr: {}", manifest_ptr);
-        let memory = instance.get_memory(&mut store, "memory").unwrap();
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .ok_or_else(|| anyhow::anyhow!("WASM plugin does not export memory"))?;
         memory.data_mut(&mut store)
             [manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()]
             .copy_from_slice(&manifest_bytes);
-        // Verify write
-        let verify = &memory.data(&store)
-            [manifest_ptr as usize..manifest_ptr as usize + manifest_bytes.len()];
-        eprintln!(
-            "DEBUG: Verify write at manifest_ptr: {} bytes, content: {}",
-            verify.len(),
-            String::from_utf8_lossy(verify)
-        );
         set_manifest
             .call_async(&mut store, (manifest_ptr, manifest_bytes.len() as i32))
             .await?;
-        eprintln!("DEBUG: Called set_manifest");
 
         // Write tools JSON: allocate in WASM memory, copy data, register pointer
         let tools_json = tools_json.unwrap_or_else(|| serde_json::json!([]));
         let tools_bytes = serde_json::to_vec(&tools_json)?;
-        eprintln!(
-            "DEBUG: Tools JSON bytes: {} bytes, content: {}",
-            tools_bytes.len(),
-            String::from_utf8_lossy(&tools_bytes)
-        );
         let tools_ptr = allocate
             .call_async(&mut store, (tools_bytes.len() as i32,))
             .await?
             .0;
-        eprintln!("DEBUG: Allocated tools_ptr: {}", tools_ptr);
         memory.data_mut(&mut store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()]
             .copy_from_slice(&tools_bytes);
-        // Verify write
-        let verify =
-            &memory.data(&store)[tools_ptr as usize..tools_ptr as usize + tools_bytes.len()];
-        eprintln!(
-            "DEBUG: Verify write at tools_ptr: {} bytes, content: {}",
-            verify.len(),
-            String::from_utf8_lossy(verify)
-        );
         set_tools
             .call_async(&mut store, (tools_ptr, tools_bytes.len() as i32))
             .await?;
-        eprintln!("DEBUG: Called set_tools");
 
         // Get exports (now using the set JSON data)
         let get_tools = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_tools")?;
         let (tools_ptr_out, tools_len) = get_tools.call_async(&mut store, ()).await?;
-        eprintln!(
-            "DEBUG: get_tools returned: ptr={}, len={}",
-            tools_ptr_out, tools_len
-        );
 
         // Read tools from WASM memory
         let tools_data = &memory.data(&store)
             [tools_ptr_out as usize..tools_ptr_out as usize + tools_len as usize];
-        eprintln!(
-            "DEBUG: Tools data read: {} bytes, content: {}",
-            tools_data.len(),
-            String::from_utf8_lossy(tools_data)
-        );
         let _tools: Vec<ToolDefinition> = serde_json::from_slice(tools_data)?;
 
         // Get manifest
         let get_manifest = instance.get_typed_func::<(), (i32, i32)>(&mut store, "get_manifest")?;
         let (manifest_ptr_out, manifest_len) = get_manifest.call_async(&mut store, ()).await?;
-        eprintln!(
-            "DEBUG: get_manifest returned: ptr={}, len={}",
-            manifest_ptr_out, manifest_len
-        );
         let manifest_data = &memory.data(&store)
             [manifest_ptr_out as usize..manifest_ptr_out as usize + manifest_len as usize];
-        eprintln!(
-            "DEBUG: Manifest data read: {} bytes, content: {}",
-            manifest_data.len(),
-            String::from_utf8_lossy(manifest_data)
-        );
         let manifest: PluginManifest = serde_json::from_slice(manifest_data)?;
 
         let instance_id = {
@@ -446,14 +428,14 @@ impl PluginManager {
         Ok(())
     }
 
-    fn add_host_functions(&self, linker: &mut Linker<()>) -> Result<()> {
+    fn add_host_functions(&self, linker: &mut Linker<StoreLimits>) -> Result<()> {
         let host = self.wasm_host.clone();
 
         // db_read
         linker.func_wrap(
             "host",
             "db_read",
-            move |_caller: Caller<'_, ()>,
+            move |_caller: Caller<'_, StoreLimits>,
                   _ptr: i32,
                   _len: i32,
                   _out_ptr: i32,
@@ -561,17 +543,18 @@ impl PluginManager {
         }
 
         // Find tool definition
-        let _tool_def = plugin
-            .manifest
-            .tools
-            .iter()
-            .find(|t| t.name == tool_name)
-            .ok_or_else(|| anyhow::anyhow!("Tool not found: {}", tool_name))?;
+        let _tool_def = plugin.manifest.tools.iter().find(|t| t.name == tool_name);
+        let hash_alias = plugin.manifest.name == "hash-tools"
+            && matches!(tool_name, "md5" | "sha1" | "sha256" | "sha512");
+        if _tool_def.is_none() && !hash_alias {
+            anyhow::bail!("Tool not found: {}", tool_name);
+        }
 
         // Validate args against schema (simplified)
         // In production, use jsonschema crate
 
         let result = match &plugin.plugin_type {
+            #[cfg(feature = "native-plugins")]
             PluginType::Native { .. } => self.call_native_tool(&plugin, tool_name, args).await?,
             PluginType::Wasm {
                 module: _,
@@ -586,6 +569,7 @@ impl PluginManager {
         Ok(result)
     }
 
+    #[cfg(feature = "native-plugins")]
     async fn call_native_tool(
         &self,
         _plugin: &Plugin,
@@ -599,14 +583,41 @@ impl PluginManager {
 
     async fn call_wasm_tool(
         &self,
-        _plugin: &Plugin,
-        _tool_name: &str,
-        _args: Value,
+        plugin: &Plugin,
+        tool_name: &str,
+        args: Value,
         _instance_id: u64,
     ) -> Result<Value> {
-        // WASM tool calling
-        // Simplified for now
-        Ok(Value::Null)
+        // Builtins have a deliberately small, deterministic host implementation.
+        // Their WASM module carries the validated manifest and tool schema; keeping
+        // cryptographic primitives in Rust avoids a fake no-op WASM call export.
+        if plugin.manifest.name == "hash-tools" {
+            let algorithm = if tool_name == "hash" {
+                args.get("algorithm")
+                    .and_then(Value::as_str)
+                    .unwrap_or("sha256")
+            } else {
+                tool_name
+            };
+            let input = args
+                .get("input")
+                .or_else(|| args.get("text"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow::anyhow!("hash tool requires string 'input' or 'text'"))?;
+            let bytes = input.as_bytes();
+            let digest = match algorithm {
+                "md5" => format!("{:x}", Md5::digest(bytes)),
+                "sha1" => format!("{:x}", Sha1::digest(bytes)),
+                "sha256" => format!("{:x}", Sha256::digest(bytes)),
+                "sha512" => format!("{:x}", Sha512::digest(bytes)),
+                other => anyhow::bail!("Unsupported hash algorithm: {}", other),
+            };
+            return Ok(serde_json::json!({"hash": digest, "algorithm": algorithm}));
+        }
+        anyhow::bail!(
+            "WASM tool execution is not implemented for plugin '{}'",
+            plugin.manifest.name
+        )
     }
 
     /// List all loaded plugins
@@ -634,7 +645,8 @@ impl PluginManager {
     pub async fn discover_plugins(&self) -> Result<Vec<String>> {
         let mut loaded = Vec::new();
 
-        // Load native plugins
+        // Native dynamic libraries are never loaded by default.
+        #[cfg(feature = "native-plugins")]
         if self.native_lib_dir.exists() {
             for entry in std::fs::read_dir(&self.native_lib_dir)? {
                 let entry = entry?;
@@ -724,9 +736,68 @@ mod tests {
 
     #[tokio::test]
     async fn test_plugin_manager_creation() {
+        let root =
+            std::env::temp_dir().join(format!("koala-plugin-manager-{}", uuid::Uuid::new_v4()));
         let host = WasmHost::new();
-        let manager = PluginManager::new(host, "/tmp/plugins/native", "/tmp/plugins/wasm").unwrap();
-
+        let manager = PluginManager::new(host, root.join("native"), root.join("wasm")).unwrap();
         assert!(manager.list_plugins().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wasm_memory_limit_rejects_oversized_modules() {
+        let root = std::env::temp_dir().join(format!("koala-wasm-limits-{}", uuid::Uuid::new_v4()));
+        let wasm_dir = root.join("wasm");
+        std::fs::create_dir_all(&wasm_dir).unwrap();
+        let bytes = wat::parse_str("(module (memory 1025))").unwrap();
+        std::fs::write(wasm_dir.join("oversized.wasm"), bytes).unwrap();
+        let manager = PluginManager::new(WasmHost::new(), root.join("native"), &wasm_dir).unwrap();
+        assert!(manager
+            .load_wasm_plugin("oversized.wasm", None, None)
+            .await
+            .is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn installed_hash_builtin_restores_manifest_and_computes_sha256() {
+        let root = std::env::temp_dir().join(format!("koala-hash-plugin-{}", uuid::Uuid::new_v4()));
+        let registry = crate::plugin_marketplace::PluginRegistry::new(&root)
+            .await
+            .unwrap();
+        registry.install("hash-tools", None).await.unwrap();
+
+        let manager = PluginManager::new(
+            WasmHost::new(),
+            root.join("plugins/native"),
+            root.join("plugins/wasm"),
+        )
+        .unwrap();
+        manager.discover_plugins().await.unwrap();
+        manager
+            .load_builtin_plugin("hash-tools", &registry)
+            .await
+            .unwrap();
+
+        let manifest = manager
+            .list_plugins()
+            .into_iter()
+            .find(|manifest| manifest.name == "hash-tools")
+            .expect("builtin manifest is restored");
+        assert!(manifest.tools.iter().any(|tool| tool.name == "hash"));
+
+        let result = manager
+            .call_tool(
+                "hash-tools",
+                "sha256",
+                serde_json::json!({"input": "hello"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            result["hash"],
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

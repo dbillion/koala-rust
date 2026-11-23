@@ -1,3 +1,4 @@
+mod backup;
 mod entities;
 mod fact_prefix;
 mod fact_search;

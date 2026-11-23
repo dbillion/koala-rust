@@ -137,10 +137,29 @@ def main():
     check("vector exists before delete", vcount(s["db"], rid) == "1", vcount(s["db"], rid))
     check("delete_fact deleted", call("delete_fact", {"name": "temp_del"}).get("deleted") is True)
     check("vector removed with fact", vcount(s["db"], rid) == "0", vcount(s["db"], rid))
+
+    # Permanent deletion must remove every historical version, not just the
+    # current row, and secure_delete + incremental vacuum must clear the text.
+    old_marker = "purge-history-old-marker-9c71d2"
+    new_marker = "purge-history-new-marker-3a4f8b"
+    old_id = call("remember_semantic", {"name": "purge_history", "text": old_marker})["rowid"]
+    new_id = call("remember_semantic", {"name": "purge_history", "text": new_marker})["rowid"]
+    check("both versions have vectors", vcount(s["db"], old_id) == "0" and vcount(s["db"], new_id) == "1")
+    check("purge removes all versions", call("delete_fact", {"name": "purge_history"}).get("deleted") is True
+          and sql(s["db"], "select count(*) from facts where name='purge_history'") == "0")
+    raw_db = open(s["db"], "rb").read()
+    check("purge clears old plaintext from database file",
+          old_marker.encode() not in raw_db and new_marker.encode() not in raw_db)
+    check("purge leaves text-free tombstone",
+          sql(s["db"], "select count(*) from facts_tombstone where name='purge_history'") == "1")
+
     a = call("remember_semantic", {"name": "tmpgrp_a", "text": "Group fact alpha about giraffes."})["rowid"]
     b = call("remember_semantic", {"name": "tmpgrp_b", "text": "Group fact beta about giraffes."})["rowid"]
+    call("remember_semantic", {"name": "tmpgrp_a", "text": "Updated group fact alpha."})
     call("delete_fact_prefix", {"prefix": "tmpgrp_"})
     check("prefix vectors removed", vcount(s["db"], a) == "0" and vcount(s["db"], b) == "0")
+    check("prefix purge removes historical rows",
+          sql(s["db"], "select count(*) from facts where name like 'tmpgrp_%'") == "0")
     r = call("recall", {"query": "giraffes", "k": 5}).get("results", [])
     check("deleted facts not recalled",
           not any(h["name"].startswith("tmpgrp_") or h["name"] == "temp_del" for h in r))
