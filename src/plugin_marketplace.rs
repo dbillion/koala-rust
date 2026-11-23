@@ -203,7 +203,11 @@ impl PluginRegistry {
         if install_path.exists() {
             let installed = std::fs::read(&install_path)?;
             if self.compute_sha256(&installed) == expected_sha256 {
-                info!("Plugin '{}' already installed and checksum verified", name);
+                self.verify_plugin_signature(&plugin, &installed)?;
+                info!(
+                    "Plugin '{}' already installed and checksum/signature verified",
+                    name
+                );
                 return Ok(install_path);
             }
             warn!(
@@ -232,7 +236,11 @@ impl PluginRegistry {
             ));
         }
 
-        // Write the WASM file
+        // A digest detects corruption; the trusted Ed25519 signature authenticates
+        // remote publisher identity. Built-in plugins are pinned at build time.
+        self.verify_plugin_signature(&plugin, &wasm_bytes)?;
+
+        // Write the WASM file only after both integrity and authenticity checks.
         std::fs::write(&install_path, wasm_bytes)?;
         info!("Installed plugin '{}' to {:?}", name, install_path);
 
