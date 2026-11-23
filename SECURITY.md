@@ -22,6 +22,11 @@ reproducible attack against a live system. Use GitHub's **Report a vulnerability
 repository Security tab to submit a private advisory. Include the affected version, platform,
 impact, and a minimal reproduction. We will coordinate a fix and disclosure through the advisory.
 
+## Supported versions
+
+Security fixes target the latest release. Please reproduce reports on the latest published version
+when possible; older pre-1.0 releases may not receive backports.
+
 ## Release verification
 
 Release archives publish `SHA256SUMS.txt`. Verify it before installing:
@@ -48,3 +53,8 @@ artifacts do not replace source review, reproducible builds, or a security asses
 - No CMMC, FedRAMP, HIPAA, SOC 2, or other certification claim.
 
 See [Threat Model](docs/THREAT_MODEL.md), [Claims](docs/CLAIMS.md), and the sector-specific guides.
+
+## Dependencies
+
+Dependabot checks Cargo and GitHub Actions dependencies weekly. Patch updates are eligible for
+automatic merge only after the required CI checks pass.

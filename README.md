@@ -1,4 +1,18 @@
-# koala-rust
+<h1 align="center">🐨 koala-rust</h1>
+
+<p align="center">
+  <b>The memory your AI agents keep.</b><br>
+  One small binary. One SQLite file you own. Works with any MCP agent.
+</p>
+
+<p align="center">
+  <a href="https://github.com/dbillion/koala-rust/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/dbillion/koala-rust"></a>
+  <a href="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-orange.svg">
+  <a href="https://github.com/dbillion/koala-rust/labels/good%20first%20issue"><img alt="Good first issues" src="https://img.shields.io/github/issues/dbillion/koala-rust/good%20first%20issue?label=good%20first%20issues&color=7057ff"></a>
+  <a href="https://github.com/dbillion/koala-rust/labels/help%20wanted"><img alt="Help wanted" src="https://img.shields.io/github/issues/dbillion/koala-rust/help%20wanted?label=help%20wanted&color=008672"></a>
+</p>
 
 Local-first memory for AI agents. One small binary that speaks MCP over stdio.
 Versioned facts, semantic recall, knowledge graph, tasks, handoff notes, sync primitives, and plugin hooks.
@@ -177,16 +191,30 @@ These guides describe current gaps; they are not certifications or legal advice.
 
 ## Where help is wanted
 
-| Area | Issues |
+| Area | Open work |
 |---|---|
-| Data protection | [#11](https://github.com/dbillion/koala-rust/issues/11) delete bug, [#12](https://github.com/dbillion/koala-rust/issues/12) retention, [#14](https://github.com/dbillion/koala-rust/issues/14) encryption |
-| Trust and audit | [#13](https://github.com/dbillion/koala-rust/issues/13) as-of recall, [#15](https://github.com/dbillion/koala-rust/issues/15) audit log, [#16](https://github.com/dbillion/koala-rust/issues/16) access, [#17](https://github.com/dbillion/koala-rust/issues/17) plugin trust, [#29](https://github.com/dbillion/koala-rust/issues/29) plugin bug |
-| Offline and ops | [#18](https://github.com/dbillion/koala-rust/issues/18) offline build, [#20](https://github.com/dbillion/koala-rust/issues/20) migrations and backup |
-| Code health | [#19](https://github.com/dbillion/koala-rust/issues/19) split large files, [#21](https://github.com/dbillion/koala-rust/issues/21) errors and tests |
-| Usability | [#22](https://github.com/dbillion/koala-rust/issues/22) CLI recall, [#23](https://github.com/dbillion/koala-rust/issues/23) Python adapters |
-| Docs and sector guides | [#24](https://github.com/dbillion/koala-rust/issues/24), [#25](https://github.com/dbillion/koala-rust/issues/25), [#26](https://github.com/dbillion/koala-rust/issues/26), [#27](https://github.com/dbillion/koala-rust/issues/27) |
+| Data protection | [#14](https://github.com/dbillion/koala-rust/issues/14) SQLCipher key lifecycle/rekey; [#16](https://github.com/dbillion/koala-rust/issues/16) identity, access labels and namespaces |
+| Code structure and performance | [#19](https://github.com/dbillion/koala-rust/issues/19) strict 99-line refactor; [#37](https://github.com/dbillion/koala-rust/issues/37) 1k/10k/100k benchmarks |
+| Defense track | [#27](https://github.com/dbillion/koala-rust/issues/27) TPM/PKCS#11 provider spike and hardware partnerships |
+| Adoption | [#34](https://github.com/dbillion/koala-rust/issues/34) terminal demo, [#35](https://github.com/dbillion/koala-rust/issues/35) MCP setup guides, [#36](https://github.com/dbillion/koala-rust/issues/36) macOS/Windows example tests, [#38](https://github.com/dbillion/koala-rust/issues/38) language examples |
 
 ---
+
+## Contribute
+
+New here? You are exactly who this project wants. We welcome first pull requests and help contributors land them.
+
+1. **Pick a task:** browse [good first issues](https://github.com/dbillion/koala-rust/labels/good%20first%20issue) or [help wanted](https://github.com/dbillion/koala-rust/labels/help%20wanted). Comment to say you are on it.
+2. **Set up:** `git clone`, `cargo build`, `cargo test`. Steps and checks are in [CONTRIBUTING.md](CONTRIBUTING.md).
+3. **Open a pull request.** Small and focused is great.
+
+Ideas that need no Rust: record the README demo ([#34](https://github.com/dbillion/koala-rust/issues/34)), test setup on your MCP client ([#35](https://github.com/dbillion/koala-rust/issues/35)), try the examples on macOS or Windows ([#36](https://github.com/dbillion/koala-rust/issues/36)), improve docs, or write an example in your favourite language ([#38](https://github.com/dbillion/koala-rust/issues/38)).
+
+Found a bug or have an idea? [Open an issue](https://github.com/dbillion/koala-rust/issues/new/choose). Security problem? See [SECURITY.md](SECURITY.md). Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+<a href="https://github.com/dbillion/koala-rust/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=dbillion/koala-rust">
+</a>
 
 # Reference guide
 
@@ -367,7 +395,7 @@ mcp_servers:
 | **2** | **Multi-Agent Collaboration** | CRDT change/merge primitives are available; durable peer transport and conflict operations across processes remain future work. |
 | **3** | **Audit & Change History** | Versioned facts plus a partial hash-chain audit log support internal review. This is not immutable/WORM storage or compliance evidence. |
 | **4** | **Cross-Session Continuity** | Agents resume exactly where they left off — context, tasks, learned patterns persist across restarts, days, machines. |
-| **5** | **Local AI Memory** | Runs locally after the embedding model is provisioned. First-run downloads may require network access; the database is not encrypted and there is no built-in access control. |
+| **5** | **Local AI Memory** | Runs locally after the embedding model is provisioned. A separate no-network binary is available; the default database is unencrypted and there is no built-in access control. |
 | **6** | **Plugin-Driven Workflow Automation** | Built-in WASM utilities and optional trusted native plugins are available. Third-party WASM tool execution and native-plugin isolation remain limited. |
 | **7** | **Semantic Search over Conversations** | "What did we decide about auth last month?" → vector search returns relevant turns, not keyword matches. |
 | **8** | **Knowledge Graph for Domain Modeling** | Entities + observations + relations = queryable domain model. "Show all services depending on PostgreSQL." |
@@ -376,7 +404,7 @@ mcp_servers:
 
 > **Reality check (v0.3.5 development branch)** for use cases 3 and 5.
 > - **#3 Compliance & audit trail.** Fact versions are accompanied by a hash-chain audit log and optional Ed25519-signed head. Application audit coverage is partial; raw SQL and direct database edits can bypass application events, and signer identity is trusted only with an externally pinned public key. This is not WORM or a certification.
-> - **#5 Local-first.** Runtime recall works offline once the embedding model is cached. First-run model provisioning and remote plugin installs still need network access (#18). SQLCipher is experimental and opt-in; the default database is not encrypted, and there is no built-in access control (#14, #16).
+> - **#5 Local-first.** The no-network build and separate offline release binary are available. Provision the model on a connected machine first; remote plugin installs remain network-only. SQLCipher is experimental and opt-in; the default database is not encrypted, and there is no built-in access control (#14, #16).
 
 ---
 
@@ -432,7 +460,7 @@ koala-rust context status --help
 
 ---
 
-## 🔌 MCP Tools (60 Total)
+## 🔌 MCP Tools (61 Total)
 
 | Category | Tools |
 |----------|-------|
@@ -718,16 +746,17 @@ Bundled plugins remain available. Remote plugin downloads and model fetches are 
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Roadmap and current status
 
-| Version | Focus |
-|---------|-------|
-| **v0.3** | Conversation auto-logging hook, better fact extraction (LLM-based) |
-| **v0.4** | Remote plugin registry, plugin signing/verification |
-| **v0.5** | Distributed sync (WebRTC/WebSocket), conflict resolution UI |
-| **v1.0** | Production hardening, benchmarks, migration tools |
-
-> v0.3.3 added the continuity tools (handoff, decisions, project status). Current, detailed work items live in the issues: [#11 to #29](https://github.com/dbillion/koala-rust/issues).
+| Area | Status |
+|---|---|
+| Permanent deletion and retention | All fact versions, vectors and text are purged; TTL sweeping and text-free tombstones are implemented and regression-tested (#11, #12). |
+| Historical recall and audit | Point-in-time CLI/semantic recall plus hash-chain audit verification/export and optional signed heads are implemented; audit coverage is partial, not WORM (#13, #15). |
+| Encryption and access control | SQLCipher works as an experimental opt-in; key lifecycle/rekey coverage is incomplete. Authenticated identities, labels and tenant isolation are not implemented (#14, #16). |
+| Plugin trust | Remote plugin signatures, hashes, Wasmtime resource limits and native-plugin opt-in are implemented; native plugins remain trusted in-process code (#17, #29). |
+| Offline operation and storage | Network-free feature build, model provisioning path, air-gapped test, numbered migrations and backup/restore are implemented (#18, #20). |
+| Adoption and documentation | CLI recall, Python adapters, healthcare/finance guides, threat model, claims table and release supply-chain workflow are implemented (#22, #23, #24, #25, #26). |
+| Remaining engineering | Strict 99-line file split, TPM/PKCS#11 research, independent hardware/compliance work and large-store benchmarks remain (#19, #27, #37). |
 
 ---
 
