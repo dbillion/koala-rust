@@ -165,7 +165,9 @@ impl SyncManager {
 
         let mut map = serde_json::Map::new();
         for entry in doc.entries.iter() {
-            map.insert(entry.key().clone(), entry.value().value.clone());
+            if !entry.value().deleted {
+                map.insert(entry.key().clone(), entry.value().value.clone());
+            }
         }
         Ok(serde_json::Value::Object(map))
     }
@@ -238,6 +240,55 @@ impl SyncManager {
         .await?;
 
         Ok(id)
+    }
+
+    /// Publish a text-free tombstone for a deleted fact.
+    pub async fn sync_delete_fact(&self, name: &str) -> Result<()> {
+        let doc = self
+            .docs
+            .get(&SyncDocType::Facts)
+            .ok_or_else(|| anyhow::anyhow!("Facts document not found"))?;
+        let mut vector_clock = doc
+            .entries
+            .get(name)
+            .map(|entry| entry.vector_clock.clone())
+            .unwrap_or_default();
+        drop(doc);
+        vector_clock.increment(self.peer_id);
+        self.apply_change(SyncDocType::Facts, |entries| {
+            entries.insert(
+                name.to_string(),
+                SyncEntry {
+                    key: name.to_string(),
+                    value: serde_json::json!({"deleted": true}),
+                    vector_clock,
+                    peer_id: self.peer_id,
+                    timestamp: Utc::now(),
+                    deleted: true,
+                },
+            );
+            Ok(())
+        })
+        .await
+    }
+
+    /// Publish tombstones for all synced facts with the supplied prefix.
+    pub async fn sync_delete_fact_prefix(&self, prefix: &str) -> Result<usize> {
+        let doc = self
+            .docs
+            .get(&SyncDocType::Facts)
+            .ok_or_else(|| anyhow::anyhow!("Facts document not found"))?;
+        let names: Vec<String> = doc
+            .entries
+            .iter()
+            .filter(|entry| entry.key().starts_with(prefix) && !entry.value().deleted)
+            .map(|entry| entry.key().clone())
+            .collect();
+        drop(doc);
+        for name in &names {
+            self.sync_delete_fact(name).await?;
+        }
+        Ok(names.len())
     }
 
     /// Sync read fact
@@ -387,5 +438,31 @@ mod tests {
         let fact = peer2.sync_read_fact("shared_key").await.unwrap();
         assert!(fact.is_some());
         assert_eq!(fact.unwrap().1, "from_peer1");
+    }
+}
+
+#[cfg(test)]
+mod purge_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deleted_sync_fact_is_a_text_free_tombstone() {
+        let manager = SyncManager::new(None).await.unwrap();
+        manager
+            .sync_write_fact("private", "old private text")
+            .await
+            .unwrap();
+        manager.sync_delete_fact("private").await.unwrap();
+        assert!(manager.sync_read_fact("private").await.unwrap().is_none());
+        assert!(manager.sync_list_facts().await.unwrap().is_empty());
+        let state = manager.get_state(SyncDocType::Facts).await.unwrap();
+        assert!(state.get("private").is_none());
+        let changes = manager
+            .get_pending_changes(SyncDocType::Facts)
+            .await
+            .unwrap();
+        let tombstone = changes.iter().find(|entry| entry.key == "private").unwrap();
+        assert!(tombstone.deleted);
+        assert_eq!(tombstone.value, serde_json::json!({"deleted": true}));
     }
 }

@@ -218,7 +218,11 @@ impl Koala {
 
     /// Purge expired fact versions, their vectors, and reclaim freed SQLite pages.
     pub async fn sweep_expired_facts(&self) -> Result<usize> {
+        let expired_names = self.db.expired_fact_names().await?;
         let rowids = self.db.purge_expired_facts().await?;
+        for name in expired_names {
+            self.sync_manager.sync_delete_fact(&name).await?;
+        }
         self.drop_vectors(&rowids).await;
         if !rowids.is_empty() {
             self.db.incremental_vacuum().await?;
@@ -232,6 +236,9 @@ impl Koala {
     pub async fn delete_fact_and_vector(&self, name: &str) -> Result<bool> {
         let rowids = self.db.fact_rowids(name).await?;
         let deleted = self.db.delete_fact(name).await?;
+        if deleted {
+            self.sync_manager.sync_delete_fact(name).await?;
+        }
         self.drop_vectors(&rowids).await;
         self.db.incremental_vacuum().await?;
         Ok(deleted)
@@ -241,6 +248,7 @@ impl Koala {
     pub async fn delete_fact_prefix_and_vectors(&self, prefix: &str) -> Result<i64> {
         let rowids = self.db.fact_rowids_prefix(prefix).await?;
         let count = self.db.delete_fact_prefix(prefix).await?;
+        self.sync_manager.sync_delete_fact_prefix(prefix).await?;
         self.drop_vectors(&rowids).await;
         self.db.incremental_vacuum().await?;
         Ok(count)
