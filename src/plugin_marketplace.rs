@@ -1,7 +1,9 @@
 //! Plugin marketplace for discovering, installing, and managing WASM/native plugins.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::Client;
+use ring::signature::{UnparsedPublicKey, ED25519};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -604,7 +606,6 @@ mod signature_tests {
             signature: Some(signature),
             key_id: Some("release-2026".to_string()),
             plugin_type: "wasm".to_string(),
-            dependencies: Vec::new(),
         };
         let root = std::env::temp_dir().join(format!("koala-signature-{}", uuid::Uuid::new_v4()));
         let registry_store = PluginRegistry::new(&root).await.unwrap();
