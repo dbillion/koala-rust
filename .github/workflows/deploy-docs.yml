@@ -189,15 +189,15 @@ jobs:
       name: github-pages
       url: https://dbillion.github.io/koala-rust/
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: api-docs
           path: deploy/api
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: architecture-docs
           path: deploy/architecture
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: mdbook-docs
           path: deploy/book
