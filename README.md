@@ -155,10 +155,9 @@ reduce that cost. Not legal advice.
 
 ## Where it is today, and where it is going
 
-koala-rust is **pre-1.0**. It is solid for personal and team agent memory and for pilots on
-non-sensitive data. The next goal is to make it trustworthy for sensitive work in **healthcare and
-finance** first, with **defense** and air-gapped edge use after that. Every step is an open issue
-you can pick up, and each has a clear "done when".
+The next goal is to make koala-rust trustworthy for sensitive work in **healthcare and finance**
+first, with **defense** and air-gapped edge use after that. Every step is an open issue you can
+pick up, and each has a clear "done when".
 
 | Theme | What is coming | Start here |
 |---|---|---|
@@ -171,8 +170,7 @@ you can pick up, and each has a clear "done when".
 | **Healthy codebase** | Split big files into small modules, more tests, benchmarks | [#19](https://github.com/dbillion/koala-rust/issues/19) · [#21](https://github.com/dbillion/koala-rust/issues/21) · [#37](https://github.com/dbillion/koala-rust/issues/37) |
 | **Sector guides** | Healthcare, finance, then defense deployment notes | [#25](https://github.com/dbillion/koala-rust/issues/25) · [#26](https://github.com/dbillion/koala-rust/issues/26) · [#27](https://github.com/dbillion/koala-rust/issues/27) |
 
-Until the first themes land, please keep secrets and real patient, financial or classified data
-out of it. Details by sector are below.
+Details by sector are below.
 
 <details>
 <summary><b>Readiness by sector (healthcare, finance, defense last)</b></summary>
