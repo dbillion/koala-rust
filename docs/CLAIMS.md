@@ -14,7 +14,7 @@ when its named test or workflow is present and passing on the relevant commit.
 | Built-in hash plugin | Plugin install/discovery/hash regression test | Implemented in this branch for built-in hash operations |
 | Plugin artifact integrity and authenticity | Mandatory SHA-256 plus Ed25519 verification for remote WASM installs; build-time hashes for builtins | Implemented in this branch when trusted publisher keys are configured; third-party WASM tool execution is not implemented |
 | WASM sandbox | Wasmtime fuel, memory/table limits, no WASI imports in linker; native plugins are opt-in | Limited sandbox; third-party WASM tool execution is not implemented, and enabling native plugins removes the WASM isolation boundary |
-| Offline operation | E2E with cached model under network isolation | Verified only after model cache is populated; first run still needs model download |
+| Offline operation | E2E exercises a shared Hugging Face cache; it does not deny network access | Not a true air-gap build: model and remote plugin fetching still require network; no network-free Cargo feature is implemented |
 | Encryption at rest | Opt-in `sqlcipher` feature and wrong-key/plaintext integration test | Experimental only: key via `KOALA_DB_KEY`; full app/vector, backup/restore, rekey, sync-blob and external key-provider coverage remain incomplete. Use host full-disk encryption as interim protection |
 | Access control / tenant isolation | No authenticated caller identity or policy gate | Not implemented |
 | Tamper-evident audit / WORM | No signed append-only audit chain or WORM storage integration | Not implemented; do not claim SEC 17a-4 compliance |
