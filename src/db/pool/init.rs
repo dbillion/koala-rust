@@ -1,7 +1,7 @@
 use super::{vec0_path, Database};
 use crate::db::migrate;
 use anyhow::Result;
-use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::path::Path;
 use std::str::FromStr;
 
