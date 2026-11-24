@@ -10,9 +10,12 @@ on:
 permissions:
   contents: read
 
+# Production deploys (push, manual) share one group and never cancel each other.
+# Pull-request builds get their own group per PR, so they can never replace a queued
+# deploy. Without this, a Dependabot PR run cancelled the pending master deploy.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
