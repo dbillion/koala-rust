@@ -27,12 +27,12 @@ trap cleanup EXIT
 # to create a dedicated network namespace and drop back to the invoking UID/GID
 # before executing the Koala binary.
 if unshare -Urn true >/dev/null 2>&1; then
-  network_namespace=(unshare -Urn)
+  network_namespace=(unshare -Urn env)
   echo "Using an unprivileged network namespace"
 elif command -v sudo >/dev/null 2>&1 && command -v setpriv >/dev/null 2>&1 && sudo -n unshare -n true >/dev/null 2>&1; then
   network_namespace=(
     sudo -n unshare -n --
-    setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups
+    setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups env
   )
   echo "Using a privileged isolated network namespace"
 else
@@ -47,7 +47,7 @@ mkdir -p "$KOALA_STATE_DIR"
 run_offline() {
   # --state-dir is explicit so the test never touches a developer's real state.
   # The selected network namespace blocks all network traffic at OS level.
-  "${network_namespace[@]}" "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
+  "${network_namespace[@]}" "KOALA_MODEL_DIR=$KOALA_MODEL_DIR" "KOALA_VEC0_PATH=$KOALA_VEC0_PATH" "KOALA_STATE_DIR=$KOALA_STATE_DIR" "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
 }
 
 run_offline remember \
