@@ -392,7 +392,7 @@ jobs:
 
       - name: Upload draft release
         if: steps.check_assets.outputs.has_assets == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
           name: koala-rust ${{ inputs.tag || github.ref_name }}
