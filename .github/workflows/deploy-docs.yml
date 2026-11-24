@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -185,6 +183,11 @@ jobs:
     needs: [cargo-doc, litho-arch, mdbook]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: https://dbillion.github.io/koala-rust/
@@ -224,6 +227,23 @@ jobs:
           # Avoid duplicate github-pages artifacts when a failed run is retried.
           name: github-pages-${{ github.run_attempt }}
           path: deploy/site
+      - name: Wait for Pages artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_ARTIFACT: github-pages-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            artifact_visible="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" --jq '.artifacts | any(.name == env.EXPECTED_ARTIFACT)' 2>/dev/null || true)"
+            if [[ "$artifact_visible" == "true" ]]; then
+              echo "Pages artifact $EXPECTED_ARTIFACT is visible to the deployment API"
+              exit 0
+            fi
+            echo "Waiting for Pages artifact metadata ($attempt/12)..."
+            sleep 5
+          done
+          echo "::error::Pages artifact $EXPECTED_ARTIFACT was uploaded but never became visible to the deployment API" >&2
+          exit 1
       - uses: actions/deploy-pages@v4
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
