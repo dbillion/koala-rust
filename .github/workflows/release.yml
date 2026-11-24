@@ -76,25 +76,25 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: koala-rust-x86_64-unknown-linux-gnu
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             artifact: koala-rust-aarch64-unknown-linux-gnu
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           # macOS
           - target: x86_64-apple-darwin
             os: macos-15-intel
             artifact: koala-rust-x86_64-apple-darwin
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: koala-rust-aarch64-apple-darwin
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: koala-rust-x86_64-pc-windows-msvc.exe
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
 
     steps:
       - name: Checkout resolved commit
@@ -191,6 +191,8 @@ jobs:
           ls -la target/${{ matrix.target }}/release/
 
       - name: Prepare and smoke-test release bundle
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           mkdir -p artifacts bundle/licenses/sqlite-vec
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -222,6 +224,26 @@ jobs:
             -C bundle "$binary" "vec0.$extension" "licenses/sqlite-vec"
           tar -tzf "artifacts/koala-rust-${{ matrix.target }}.tar.gz"
 
+          # Publish a second executable with all HTTP/model-hub clients compiled out.
+          cargo build --locked --release --no-default-features --target "$TARGET"
+          mkdir -p offline-bundle/licenses/sqlite-vec
+          offline_binary="koala-rust-offline"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            offline_binary="$offline_binary.exe"
+            cp "target/$TARGET/release/koala-rust.exe" "offline-bundle/$offline_binary"
+            cp "offline-bundle/$offline_binary" "artifacts/koala-rust-offline-$TARGET.exe"
+          else
+            cp "target/$TARGET/release/koala-rust" "offline-bundle/$offline_binary"
+            chmod +x "offline-bundle/$offline_binary"
+            cp "offline-bundle/$offline_binary" "artifacts/koala-rust-offline-$TARGET"
+          fi
+          cp "sqlite-vec/vec0.$extension" "offline-bundle/vec0.$extension"
+          cp third-party/sqlite-vec/LICENSE-* third-party/sqlite-vec/NOTICE.md offline-bundle/licenses/sqlite-vec/
+          python tests/release_smoke.py "$PWD/offline-bundle/$offline_binary" "$PWD/$raw_extension"
+          tar -czf "artifacts/koala-rust-offline-$TARGET.tar.gz" \
+            -C offline-bundle "$offline_binary" "vec0.$extension" "licenses/sqlite-vec"
+          tar -tzf "artifacts/koala-rust-offline-$TARGET.tar.gz"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -239,6 +261,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Checkout resolved commit
         uses: actions/checkout@v4
@@ -254,6 +277,14 @@ jobs:
           pattern: koala-rust-*
           merge-multiple: true
 
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: release-assets/koala-rust.cdx.json
+          upload-artifact: false
+
       - name: Check assets
         id: check_assets
         run: |
@@ -264,16 +295,27 @@ jobs:
             koala-rust-x86_64-apple-darwin
             koala-rust-aarch64-apple-darwin
             koala-rust-x86_64-pc-windows-msvc.exe
+            koala-rust-offline-x86_64-unknown-linux-gnu
+            koala-rust-offline-aarch64-unknown-linux-gnu
+            koala-rust-offline-x86_64-apple-darwin
+            koala-rust-offline-aarch64-apple-darwin
+            koala-rust-offline-x86_64-pc-windows-msvc.exe
             koala-rust-x86_64-unknown-linux-gnu.tar.gz
             koala-rust-aarch64-unknown-linux-gnu.tar.gz
             koala-rust-x86_64-apple-darwin.tar.gz
             koala-rust-aarch64-apple-darwin.tar.gz
             koala-rust-x86_64-pc-windows-msvc.tar.gz
+            koala-rust-offline-x86_64-unknown-linux-gnu.tar.gz
+            koala-rust-offline-aarch64-unknown-linux-gnu.tar.gz
+            koala-rust-offline-x86_64-apple-darwin.tar.gz
+            koala-rust-offline-aarch64-apple-darwin.tar.gz
+            koala-rust-offline-x86_64-pc-windows-msvc.tar.gz
             vec0-x86_64-unknown-linux-gnu.so
             vec0-aarch64-unknown-linux-gnu.so
             vec0-x86_64-apple-darwin.dylib
             vec0-aarch64-apple-darwin.dylib
             vec0-x86_64-pc-windows-msvc.dll
+            koala-rust.cdx.json
           )
           missing=()
           for asset in "${expected[@]}"; do
@@ -298,8 +340,22 @@ jobs:
         if: steps.check_assets.outputs.has_assets == 'true'
         run: |
           cd release-assets
-          sha256sum koala-rust-* vec0-* > SHA256SUMS.txt
+          sha256sum koala-rust-* vec0-* koala-rust.cdx.json > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      - name: Install cosign
+        if: steps.check_assets.outputs.has_assets == 'true'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksum manifest (keyless OIDC)
+        if: steps.check_assets.outputs.has_assets == 'true'
+        env:
+          COSIGN_YES: "true"
+        run: |
+          cosign sign-blob --yes \
+            --bundle release-assets/SHA256SUMS.txt.sigstore.json \
+            release-assets/SHA256SUMS.txt
+          test -s release-assets/SHA256SUMS.txt.sigstore.json
 
       - name: Verify release tag still points to built commit
         env:
@@ -344,18 +400,17 @@ jobs:
           body: |
             ## koala-rust ${{ inputs.tag || github.ref_name }}
 
-            **Local, private, persistent memory for AI agents** — with semantic search, CRDT sync, real embeddings, and WASM plugin extensibility.
+            **Local-first memory for AI agents** — semantic recall, versioned facts, knowledge graph primitives, task tools, and plugin hooks.
 
-            A self-contained platform bundle with the Koala executable and matching sqlite-vec extension. It gives any MCP-compatible agent long-term fact storage, vector search, knowledge graphs, task management, multi-agent synchronization, and a sandboxed plugin system.
+            A self-contained platform bundle with the Koala executable and matching sqlite-vec extension. It provides local fact storage, vector search, entity/relation storage, task management, and MCP stdio tools. Persistent peer-to-peer CRDT transport is not included; plugin execution support varies by plugin type.
 
-            ### 🙏 Attribution
+            ### Included capabilities
 
-            This project is an independently developed open-source memory server for AI agents, built from scratch in Rust.
-            - Real local embeddings (Model2Vec + potion-base-8M, 256-dim)
-            - Vector search (sqlite-vec HNSW)
-            - CRDT-based multi-agent sync (VectorClock)
-            - WASM/native plugin marketplace (wasmtime + libloading)
-            - MCP server with 50 tools
+            - Local embeddings (Model2Vec + potion-base-8M, 256 dimensions; model provisioning may require network access)
+            - Vector search backed by sqlite-vec
+            - In-process CRDT change/merge primitives (not durable peer transport)
+            - Built-in hash plugin and WASM module loading; third-party WASM tool execution and native-plugin isolation remain limited
+            - MCP server with 61 tool definitions; implementation coverage varies by tool
             - Cross-platform releases (Linux and macOS x86_64/ARM64; Windows x86_64)
 
             ### Installation
@@ -395,6 +450,8 @@ jobs:
 
             Raw executables and platform-specific sqlite-vec libraries are also published separately for advanced/manual installations.
 
+            Air-gapped runtime: each platform also has a koala-rust-offline executable and archive. This build has the net feature disabled, so HTTP clients are not linked. Provision Model2Vec files once with the network-enabled executable using model fetch --to ~/.cache/koala-model, then set KOALA_MODEL_DIR=~/.cache/koala-model and run the offline executable with --offline. Keep the matching vec0 library beside the executable or select it with KOALA_VEC0_PATH.
+
             **Via Cargo:** Source installs must also install a compatible sqlite-vec extension and set `KOALA_VEC0_PATH` to its full path.
             ```bash
             cargo install --git https://github.com/dbillion/koala-rust --tag ${{ inputs.tag || github.ref_name }}
@@ -409,7 +466,13 @@ jobs:
             ### Verify Downloads
             ```bash
             sha256sum -c SHA256SUMS.txt
+            cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp '^https://github.com/dbillion/koala-rust/.github/workflows/release.yml@refs/tags/v[0-9.]+$' \
+              SHA256SUMS.txt
             ```
+
+            A CycloneDX SBOM (`koala-rust.cdx.json`) is included with the release assets.
 
             ### What's New
             See [CHANGELOG](https://github.com/dbillion/koala-rust/blob/master/CHANGELOG.md) (if exists) or commit history.
@@ -429,8 +492,8 @@ jobs:
         run: |
           set -euo pipefail
           asset_count="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
-          if [[ "$asset_count" -ne 16 ]]; then
-            echo "Expected 16 release assets, found $asset_count" >&2
+          if [[ "$asset_count" -ne 28 ]]; then
+            echo "Expected 28 release assets, found $asset_count" >&2
             exit 1
           fi
           download_dir="$(mktemp -d)"
@@ -438,6 +501,11 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$download_dir"
           cmp release-assets/SHA256SUMS.txt "$download_dir/SHA256SUMS.txt"
           (cd "$download_dir" && sha256sum -c SHA256SUMS.txt)
+          cosign verify-blob \
+            --bundle "$download_dir/SHA256SUMS.txt.sigstore.json" \
+            --certificate-identity "https://github.com/${GITHUB_WORKFLOW_REF}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$download_dir/SHA256SUMS.txt"
           git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
           actual_commit="$(git rev-parse "$RELEASE_TAG^{commit}")"
           if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then

@@ -550,6 +550,7 @@
     "inputSchema": {
       "properties": {
         "filter": {
+          "description": "Literal keyword matched against fact names and text; not a SQL expression.",
           "type": "string"
         },
         "k": {
@@ -753,6 +754,11 @@
         },
         "text": {
           "type": "string"
+        },
+        "ttl_seconds": {
+          "description": "Optional TTL in seconds; otherwise per-label/global environment defaults apply",
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -785,6 +791,14 @@
       "type": "object"
     },
     "name": "recall"
+  },
+  {
+    "description": "Permanently purge expired fact versions and associated vectors",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "sweep_expired_facts"
   },
   {
     "description": "Re-embed all current facts (after changing embedding model)",

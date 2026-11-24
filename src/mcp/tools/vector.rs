@@ -41,7 +41,10 @@ pub(super) fn specs() -> Vec<Value> {
                     json!({"type": "array", "items": {"type": "number"}}),
                 );
                 p.insert("k".to_string(), json!({"type": "integer"}));
-                p.insert("filter".to_string(), json!({"type": "string"}));
+                p.insert(
+                    "filter".to_string(),
+                    json!({"type": "string", "description": "Literal keyword matched against fact names and text; not a SQL expression."}),
+                );
                 p
             },
             Some(vec!["query_embedding", "k"]),

@@ -1,0 +1,9 @@
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono has no fixed upgrade. It is used for persisted UTC timestamps and SQLx chrono decoding across the public API; replacing it requires a coordinated timestamp migration. Track a replacement separately. No vulnerable-code advisory is involved." },
+  { id = "RUSTSEC-2025-0057", reason = "fxhash is an unmaintained transitive dependency of Wasmtime's fxprof-processed-profile; no fixed upgrade is published upstream. It is not used directly by Koala code." },
+  { id = "RUSTSEC-2025-0119", reason = "number_prefix is an unmaintained transitive dependency of indicatif via hf-hub/tokenizers; no fixed upgrade is published upstream. It is not used directly by Koala code." },
+  { id = "RUSTSEC-2024-0436", reason = "paste is an unmaintained transitive dependency of tokenizers; no fixed upgrade is published upstream. It is not used directly by Koala code." },
+]

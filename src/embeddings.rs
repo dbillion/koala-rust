@@ -6,9 +6,13 @@
 use anyhow::Result;
 use dashmap::DashMap;
 use model2vec_rs::model::StaticModel;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
+
+mod fetch;
+pub use fetch::fetch_model_to;
 
 /// Embedding model configuration
 #[derive(Debug, Clone)]
@@ -37,9 +41,14 @@ pub const EMBEDDING_DIM: usize = 256;
 /// Embedding model name. Override with env KOALA_EMBED_MODEL
 /// (any Model2Vec model, e.g. minishlab/potion-base-32M).
 pub fn configured_model() -> String {
-    std::env::var("KOALA_EMBED_MODEL")
+    std::env::var("KOALA_MODEL_DIR")
         .ok()
         .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            std::env::var("KOALA_EMBED_MODEL")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+        })
         .unwrap_or_else(|| "minishlab/potion-base-8M".to_string())
 }
 
@@ -79,6 +88,19 @@ impl EmbeddingManager {
     pub async fn init(&self) -> Result<()> {
         let mut model_guard = self.model.lock().await;
         if model_guard.is_none() {
+            let local_model = Path::new(&self.config.model_name).is_dir();
+            let offline = std::env::var_os("KOALA_OFFLINE").is_some();
+            if offline && !local_model {
+                anyhow::bail!(
+                    "offline mode requires KOALA_MODEL_DIR to point to a local Model2Vec directory"
+                );
+            }
+            #[cfg(not(feature = "net"))]
+            if !local_model {
+                anyhow::bail!(
+                    "this binary was built without network support; set KOALA_MODEL_DIR to a local Model2Vec directory"
+                );
+            }
             info!("Loading Model2Vec model: {}", self.config.model_name);
             let model = StaticModel::from_pretrained(
                 &self.config.model_name,
@@ -114,12 +136,17 @@ impl EmbeddingManager {
         // Generate embedding
         self.init().await?;
         let model_guard = self.model.lock().await;
-        let model = model_guard.as_ref().unwrap();
+        let model = model_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("embedding model was not initialized"))?;
 
         // Encode single text
         let texts = vec![text.to_string()];
         let embeddings = model.encode(&texts);
-        let embedding = embeddings.into_iter().next().unwrap();
+        let embedding = embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("model returned no embedding for one input"))?;
 
         // Cache it
         self.cache.insert(text.to_string(), embedding.clone());
@@ -147,7 +174,9 @@ impl EmbeddingManager {
         if !uncached_texts.is_empty() {
             self.init().await?;
             let model_guard = self.model.lock().await;
-            let model = model_guard.as_ref().unwrap();
+            let model = model_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("embedding model was not initialized"))?;
 
             let embeddings = model.encode(&uncached_texts);
 
@@ -167,17 +196,24 @@ impl EmbeddingManager {
     pub async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         self.init().await?;
         let model_guard = self.model.lock().await;
-        let model = model_guard.as_ref().unwrap();
+        let model = model_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("embedding model was not initialized"))?;
         let texts = vec![text.to_string()];
         let embeddings = model.encode(&texts);
-        Ok(embeddings.into_iter().next().unwrap())
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("model returned no embedding for one input"))
     }
 
     /// Embed batch without caching
     pub async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         self.init().await?;
         let model_guard = self.model.lock().await;
-        let model = model_guard.as_ref().unwrap();
+        let model = model_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("embedding model was not initialized"))?;
         let owned_texts: Vec<String> = texts.iter().map(|s| s.to_string()).collect();
         Ok(model.encode(&owned_texts))
     }

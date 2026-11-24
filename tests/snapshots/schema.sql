@@ -4,6 +4,9 @@ CREATE INDEX idx_embedding_metadata_source ON embedding_metadata(source_type, so
 -- index: idx_facts_current (facts)
 CREATE INDEX idx_facts_current ON facts(is_current);
 
+-- index: idx_facts_expires_at (facts)
+CREATE INDEX idx_facts_expires_at ON facts(expires_at);
+
 -- index: idx_facts_name (facts)
 CREATE INDEX idx_facts_name ON facts(name);
 
@@ -18,6 +21,12 @@ CREATE INDEX idx_relations_to ON relations(to_entity);
 
 -- index: idx_sync_changes_peer (sync_changes)
 CREATE INDEX idx_sync_changes_peer ON sync_changes(peer_id, doc_type);
+
+-- table: audit_head (audit_head)
+CREATE TABLE audit_head (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), head_hash TEXT NOT NULL, key_id TEXT, public_key BLOB, signature BLOB, updated_at TEXT NOT NULL);
+
+-- table: audit_log (audit_log)
+CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, subject TEXT NOT NULL, details_json TEXT NOT NULL, previous_hash TEXT NOT NULL, entry_hash TEXT NOT NULL UNIQUE);
 
 -- table: brain_meta (brain_meta)
 CREATE TABLE brain_meta (
@@ -88,13 +97,13 @@ CREATE TABLE facts (
                 text TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 is_current BOOLEAN DEFAULT 1
-            );
+            , expires_at DATETIME);
 
 -- table: facts_tombstone (facts_tombstone)
 CREATE TABLE facts_tombstone (
                 name TEXT PRIMARY KEY,
                 deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
+            , actor TEXT NOT NULL DEFAULT 'local', reason TEXT NOT NULL DEFAULT 'user_requested');
 
 -- table: model_weights (model_weights)
 CREATE TABLE model_weights (
@@ -184,3 +193,9 @@ CREATE TABLE thoughts (
                 thought TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+-- trigger: audit_log_no_delete (audit_log)
+CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+
+-- trigger: audit_log_no_update (audit_log)
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;

@@ -11,8 +11,15 @@ impl KoalaServer {
         let text = args["text"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("text is required"))?;
-        let rowid = brain.remember_semantic(name, text).await?;
-        Ok(json!({"rowid": rowid, "name": name, "embedded": true}))
+        let ttl_seconds = args.get("ttl_seconds").and_then(|v| v.as_i64());
+        let rowid = if let Some(ttl) = ttl_seconds {
+            brain
+                .remember_semantic_with_ttl(name, text, Some(ttl))
+                .await?
+        } else {
+            brain.remember_semantic(name, text).await?
+        };
+        Ok(json!({"rowid": rowid, "name": name, "embedded": true, "ttl_seconds": ttl_seconds}))
     }
 
     pub(in crate::mcp) async fn handle_recall(&self, args: Value) -> Result<Value> {
@@ -32,6 +39,12 @@ impl KoalaServer {
         };
         let hits = brain.recall(query, k, w).await?;
         Ok(json!({"results": hits}))
+    }
+
+    pub(in crate::mcp) async fn handle_sweep_expired_facts(&self) -> Result<Value> {
+        let brain = self.brain.lock().await;
+        let purged = brain.sweep_expired_facts().await?;
+        Ok(json!({"purged_rows": purged}))
     }
 
     pub(in crate::mcp) async fn handle_reindex_facts(&self) -> Result<Value> {

@@ -1,36 +1,60 @@
 # Security policy
 
+## Supported security posture
+
+koala-rust is a local-first memory server, not a certified security boundary. The current release
+is suitable for development, evaluation, and appropriately controlled non-sensitive workloads.
+Do not use it as the sole control for regulated, classified, or otherwise high-impact data.
+
+The database and plugin files rely on operating-system account and filesystem permissions. An
+experimental opt-in SQLCipher feature exists, but complete application, vector, backup/restore, and
+key-management coverage is not yet verified. The application does not provide authenticated caller
+identity, role-based access control, or tenant isolation. A hash-chain audit log with optional
+Ed25519-signed heads is implemented on this branch, but mutation coverage is incomplete and it is
+not WORM storage. Native plugins execute in the host process and must be treated as trusted code.
+WASM plugins are instantiated without WASI capabilities by default; this is not a substitute for
+a complete plugin security review.
+
 ## Reporting a vulnerability
 
-Please report privately. Do not open a public issue for a security problem.
-
-1. Open a [private security advisory](https://github.com/dbillion/koala-rust/security/advisories/new).
-2. Include the version (`koala-rust --version`), your OS, steps to reproduce and what you expected.
-3. Do not include real personal, patient or financial data. Use made-up samples.
-
-This is a small open-source project run by volunteers. We read every report and will answer as
-soon as we can, but we cannot promise a fixed response time.
+Please do not open a public issue containing exploit details, credentials, personal data, or a
+reproducible attack against a live system. Use GitHub's **Report a vulnerability** action on the
+repository Security tab to submit a private advisory. Include the affected version, platform,
+impact, and a minimal reproduction. We will coordinate a fix and disclosure through the advisory.
 
 ## Supported versions
 
-Fixes land in the latest release. Please test against it before reporting.
+Security fixes target the latest release. Please reproduce reports on the latest published version
+when possible; older pre-1.0 releases may not receive backports.
 
-## What to know about the current state
+## Release verification
 
-koala-rust is pre-1.0. It is good for personal and team agent memory and for pilots, and it is being
-hardened step by step. Known gaps are public and tracked as issues, for example:
+Release archives publish `SHA256SUMS.txt`. Verify it before installing:
 
-- verified deletion of every version of a fact ([#11](https://github.com/dbillion/koala-rust/issues/11))
-- encryption at rest ([#14](https://github.com/dbillion/koala-rust/issues/14))
-- tamper-evident audit log ([#15](https://github.com/dbillion/koala-rust/issues/15))
-- access control ([#16](https://github.com/dbillion/koala-rust/issues/16))
-- plugin trust and sandbox limits ([#17](https://github.com/dbillion/koala-rust/issues/17))
+```sh
+sha256sum -c SHA256SUMS.txt
+cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/dbillion/koala-rust/.github/workflows/release.yml@refs/tags/v[0-9.]+$' \
+  SHA256SUMS.txt
+```
 
-Please do not store secrets or regulated data (health, financial or classified) in it yet.
-Reports about these known gaps are welcome as comments on the issues. Public discussion is fine,
-because they are already public. For a new problem, use the private advisory.
+The keyless Sigstore bundle authenticates the checksum manifest to the GitHub Actions release
+workflow identity. The CycloneDX SBOM is published as `koala-rust.cdx.json`. These supply-chain
+artifacts do not replace source review, reproducible builds, or a security assessment.
+
+## Known gaps
+
+- SQLCipher encryption is experimental and lacks complete application and key-management coverage.
+- No authenticated identities, access labels, or tenant namespaces.
+- Audit hash-chain/signature coverage is partial; no WORM retention guarantee.
+- No FIPS 140-validated cryptographic module claim.
+- No TPM 2.0, PKCS#11, or HSM key provider.
+- No CMMC, FedRAMP, HIPAA, SOC 2, or other certification claim.
+
+See [Threat Model](docs/THREAT_MODEL.md), [Claims](docs/CLAIMS.md), and the sector-specific guides.
 
 ## Dependencies
 
-Dependabot checks Cargo and GitHub Actions dependencies weekly. Patch updates merge automatically
-after CI passes. Security updates are not delayed.
+Dependabot checks Cargo and GitHub Actions dependencies weekly. Patch updates are eligible for
+automatic merge only after the required CI checks pass.

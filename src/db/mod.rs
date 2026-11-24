@@ -1,3 +1,5 @@
+mod audit;
+mod backup;
 mod entities;
 mod fact_prefix;
 mod fact_search;
@@ -17,5 +19,6 @@ mod tasks;
 mod thoughts;
 mod types;
 
+pub use audit::{AuditRecord, AuditVerification};
 pub use pool::{vec0_path, Database};
 pub use types::{EntityNode, HealthInfo, RankExplanation, Relation, Task};

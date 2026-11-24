@@ -5,7 +5,7 @@
 //! There is no HNSW index; the hnsw_* config fields are unused.
 
 use anyhow::Result;
-use sqlx::{Row, SqlitePool};
+use sqlx::{AssertSqlSafe, QueryBuilder, Row, Sqlite, SqlitePool};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -147,13 +147,17 @@ impl VectorEngine {
             // the stored width differs; legacy vectors are re-embedded by the
             // normal write / reindex paths as new data is written.
             if self.stale_vec0_table(table, dim).await? {
-                sqlx::query(&format!("DROP TABLE IF NOT EXISTS {table}"))
+                // SAFETY OF SQL STRING: `table` comes only from the fixed
+                // fact_embeddings/entity_embeddings allowlist above.
+                sqlx::query(AssertSqlSafe(format!("DROP TABLE IF NOT EXISTS {table}")))
                     .execute(&self.pool)
                     .await?;
             }
-            sqlx::query(&format!(
+            // SAFETY OF SQL STRING: `table` is allowlisted above and `dim` is
+            // an integer, so neither value can inject SQL syntax.
+            sqlx::query(AssertSqlSafe(format!(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0(embedding FLOAT[{dim}])"
-            ))
+            )))
             .execute(&self.pool)
             .await?;
         }
@@ -223,7 +227,8 @@ impl VectorEngine {
         Ok(())
     }
 
-    /// Search fact embeddings by vector similarity
+    /// Search fact embeddings by vector similarity. `filter`, when present,
+    /// is a literal keyword matched against current fact names and text.
     pub async fn search_facts(
         &self,
         query_embedding: &[f32],
@@ -237,29 +242,25 @@ impl VectorEngine {
         let query_json = serde_json::to_string(query_embedding)?;
         let _ef_search = self.config.hnsw_ef_search;
 
-        let sql = if let Some(filter) = filter {
-            format!(
-                "SELECT rowid as id, distance as score, '{filter}' as metadata 
-                 FROM fact_embeddings 
-                 WHERE embedding MATCH ? 
-                 AND rowid IN (SELECT rowid FROM facts WHERE {filter}) 
-                 ORDER BY distance ASC 
-                 LIMIT ?"
-            )
-        } else {
-            "SELECT rowid as id, distance as score, '{}' as metadata 
-                 FROM fact_embeddings 
-                 WHERE embedding MATCH ? 
-                 ORDER BY distance ASC 
-                 LIMIT ?"
-                .to_string()
-        };
-
-        let rows = sqlx::query(&sql)
-            .bind(query_json)
-            .bind(k as i64)
-            .fetch_all(&self.pool)
-            .await?;
+        // `filter` is a literal keyword, not a SQL expression. Keep it bound
+        // so callers cannot inject predicates or alter the query structure.
+        let keyword = filter.map(str::trim).filter(|value| !value.is_empty());
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT rowid as id, distance as score, '{}' as metadata FROM fact_embeddings WHERE embedding MATCH ",
+        );
+        query.push_bind(query_json);
+        if let Some(keyword) = keyword {
+            query
+                .push(" AND rowid IN (SELECT rowid FROM facts WHERE is_current = 1 AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP) AND (instr(lower(name), lower(")
+                .push_bind(keyword)
+                .push(")) > 0 OR instr(lower(text), lower(")
+                .push_bind(keyword)
+                .push(")) > 0))");
+        }
+        query
+            .push(" ORDER BY distance ASC LIMIT ")
+            .push_bind(k as i64);
+        let rows = query.build().fetch_all(&self.pool).await?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {
@@ -285,18 +286,17 @@ impl VectorEngine {
 
         let query_json = serde_json::to_string(query_embedding)?;
 
-        let sql = "SELECT rowid as id, distance as score, '{}' as metadata 
+        let rows = sqlx::query(
+            "SELECT rowid as id, distance as score, '{}' as metadata
              FROM entity_embeddings 
              WHERE embedding MATCH ? 
              ORDER BY distance ASC 
-             LIMIT ?"
-            .to_string();
-
-        let rows = sqlx::query(&sql)
-            .bind(query_json)
-            .bind(k as i64)
-            .fetch_all(&self.pool)
-            .await?;
+             LIMIT ?",
+        )
+        .bind(query_json)
+        .bind(k as i64)
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut results = Vec::with_capacity(rows.len());
         for row in rows {

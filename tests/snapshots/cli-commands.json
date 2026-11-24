@@ -258,15 +258,15 @@
       "output": {
         "cache_used": 0,
         "journal": true,
-        "pages": 303,
+        "pages": 310,
         "pending_flush": false,
-        "tables": 26,
+        "tables": 28,
         "usage_tracked": 0
       }
     },
     "health-text": {
       "exit_code": 0,
-      "output": "cache_used: 0\njournal: true\npages: 303\npending_flush: false\ntables: 26\nusage_tracked: 0"
+      "output": "cache_used: 0\njournal: true\npages: 310\npending_flush: false\ntables: 28\nusage_tracked: 0"
     },
     "model-init": {
       "exit_code": 0,
@@ -319,9 +319,11 @@
       "stdout": null
     },
     "plugin-call": {
-      "exit_code": 1,
-      "stderr": "Error: Plugin not found: hash-tools",
-      "stdout": null
+      "exit_code": 0,
+      "output": {
+        "algorithm": "sha256",
+        "hash": "16a0eeb0791b6c92451fd284dd9f599e0a7dbe7f6ebea6e2d2d06c7f74aec112"
+      }
     },
     "plugin-install": {
       "exit_code": 0,
@@ -347,9 +349,11 @@
           "author": "koala",
           "description": "Cryptographic hash functions (MD5, SHA1, SHA256, SHA512)",
           "download_url": "builtin://hash-tools",
+          "key_id": null,
           "name": "hash-tools",
           "plugin_type": "wasm",
-          "sha256": null,
+          "sha256": "6720de09414143da2c4ed4b7e8a0d23fc028eca51bdaf93183cf164d68c90ff8",
+          "signature": null,
           "version": "1.0.0"
         }
       ]
@@ -472,6 +476,7 @@
   "not_run": {
     "embed-batch": "requires a pretrained Model2Vec model",
     "embed-text": "requires a pretrained Model2Vec model",
+    "model-fetch": "downloads model files from Hugging Face",
     "plugin-update-registry": "contacts the public registry"
   }
 }

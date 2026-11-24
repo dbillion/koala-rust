@@ -1,6 +1,6 @@
 [package]
 name = "koala-rust"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "Koala MCP Server in Rust - Persistent memory, vector search, multi-agent sync, plugins"
 license = "MIT OR Apache-2.0"
@@ -10,7 +10,13 @@ keywords = ["mcp", "memory", "sqlite", "crdt", "wasm"]
 categories = ["command-line-utilities", "database", "embedded", "wasm"]
 readme = "README.md"
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugins/**/*"]
-rust-version = "1.91"
+rust-version = "1.94"
+
+[features]
+default = ["net"]
+net = ["dep:reqwest", "dep:hf-hub", "model2vec-rs/hf-hub"]
+native-plugins = ["dep:libloading"]
+sqlcipher = ["dep:libsqlite3-sys"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -19,9 +25,9 @@ tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 thiserror = "1.0"
 clap = { version = "4.0", features = ["derive", "env"] }
-clap-mcp = "0.1"
 dirs = "5.0"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
+sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
+libsqlite3-sys = { version = "0.40", optional = true, features = ["bundled-sqlcipher"] }
 ndarray = "0.16"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -29,34 +35,36 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # v0.2: Vector search (sqlite-vec extension loaded at runtime)
 # v0.3: Multi-agent sync (CRDT)
-automerge = "0.3"
-automerge_repo = "0.1"
 
 # v0.4: Real Embeddings (Model2Vec - static token lookup, no neural net)
-model2vec-rs = "0.4"
-tokenizers = "0.19"
+model2vec-rs = { version = "0.4", default-features = false, features = ["onig"] }
 
 # v0.5: Plugin system
 wasmtime = "36.0.19"
-libloading = "0.8"
+libloading = { version = "0.8", optional = true }
 
 # Utilities
 dashmap = "5.0"
 parking_lot = "0.12"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)
-reqwest = { version = "0.12", features = ["json", "native-tls-vendored"] }
+reqwest = { version = "0.12", optional = true, features = ["json", "native-tls-vendored"] }
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
 sha2 = "0.10"
 hex = "0.4"
+md-5 = "0.10"
+sha1 = "0.10"
+ring = "0.17"
 
 [dev-dependencies]
 wat = "1.0"
 
 [build-dependencies]
 wat = "1.0"
+sha2 = "0.10"
+hex = "0.4"
 
 [profile.release]
 lto = "thin"

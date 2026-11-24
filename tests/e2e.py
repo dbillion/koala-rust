@@ -23,7 +23,12 @@ results = []
 
 def start(name, extra=None):
     state = os.path.join(TMP, name)
-    env = dict(os.environ, KOALA_STATE_DIR=state, **(extra or {}))
+    env = dict(os.environ, KOALA_STATE_DIR=state)
+    env.update(extra or {})
+    # A deliberate remote-model override must supersede a shared local model
+    # path so the degraded-start/reindex-retry scenario exercises failure.
+    if extra and "KOALA_EMBED_MODEL" in extra:
+        env.pop("KOALA_MODEL_DIR", None)
     p = subprocess.Popen([BIN, "--serve"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, env=env)
     n = {"id": 0}
@@ -137,10 +142,29 @@ def main():
     check("vector exists before delete", vcount(s["db"], rid) == "1", vcount(s["db"], rid))
     check("delete_fact deleted", call("delete_fact", {"name": "temp_del"}).get("deleted") is True)
     check("vector removed with fact", vcount(s["db"], rid) == "0", vcount(s["db"], rid))
+
+    # Permanent deletion must remove every historical version, not just the
+    # current row, and secure_delete + incremental vacuum must clear the text.
+    old_marker = "purge-history-old-marker-9c71d2"
+    new_marker = "purge-history-new-marker-3a4f8b"
+    old_id = call("remember_semantic", {"name": "purge_history", "text": old_marker})["rowid"]
+    new_id = call("remember_semantic", {"name": "purge_history", "text": new_marker})["rowid"]
+    check("both versions have vectors", vcount(s["db"], old_id) == "0" and vcount(s["db"], new_id) == "1")
+    check("purge removes all versions", call("delete_fact", {"name": "purge_history"}).get("deleted") is True
+          and sql(s["db"], "select count(*) from facts where name='purge_history'") == "0")
+    raw_db = open(s["db"], "rb").read()
+    check("purge clears old plaintext from database file",
+          old_marker.encode() not in raw_db and new_marker.encode() not in raw_db)
+    check("purge leaves text-free tombstone",
+          sql(s["db"], "select count(*) from facts_tombstone where name='purge_history'") == "1")
+
     a = call("remember_semantic", {"name": "tmpgrp_a", "text": "Group fact alpha about giraffes."})["rowid"]
     b = call("remember_semantic", {"name": "tmpgrp_b", "text": "Group fact beta about giraffes."})["rowid"]
+    call("remember_semantic", {"name": "tmpgrp_a", "text": "Updated group fact alpha."})
     call("delete_fact_prefix", {"prefix": "tmpgrp_"})
     check("prefix vectors removed", vcount(s["db"], a) == "0" and vcount(s["db"], b) == "0")
+    check("prefix purge removes historical rows",
+          sql(s["db"], "select count(*) from facts where name like 'tmpgrp_%'") == "0")
     r = call("recall", {"query": "giraffes", "k": 5}).get("results", [])
     check("deleted facts not recalled",
           not any(h["name"].startswith("tmpgrp_") or h["name"] == "temp_del" for h in r))
@@ -195,6 +219,30 @@ def main():
                                   "SELECT 1 as num, 'test' as txt, 2.5 as flt", "-f", "json"], text=True)
     sql_rows = json.loads(out)
     check("sql CLI decodes primitives", sql_rows == [{"flt": 2.5, "num": 1, "txt": "test"}])
+
+    # ---- independent processes write concurrently to one SQLite database
+    concurrent_state = os.path.join(TMP, "multi-process")
+    concurrent_env = dict(os.environ, KOALA_STATE_DIR=concurrent_state)
+    seed = subprocess.run(
+        [BIN, "--state-dir", concurrent_state, "fact-write", "--name", "multi_seed", "--text", "seed"],
+        capture_output=True, text=True, env=concurrent_env, timeout=30,
+    )
+    check("multi-process database initialized", seed.returncode == 0, seed.stderr[:160])
+    writers = [
+        subprocess.Popen(
+            [BIN, "--state-dir", concurrent_state, "fact-write", "--name", f"multi_writer_{i}",
+             "--text", f"concurrent writer payload {i}"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=concurrent_env,
+        )
+        for i in range(2)
+    ]
+    writer_results = [writer.communicate(timeout=30) + (writer.returncode,) for writer in writers]
+    check("two concurrent CLI writers both succeed",
+          all(result[2] == 0 for result in writer_results),
+          [result[1][:120] for result in writer_results])
+    concurrent_db = os.path.join(concurrent_state, "koala.db")
+    check("both concurrent writes are durable",
+          sql(concurrent_db, "select count(*) from facts where name like 'multi_writer_%'") == "2")
 
     # ---- AI continuity & context lifecycle test
     c_server = start("continuity")

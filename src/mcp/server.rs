@@ -6,6 +6,12 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
+/// Parse one JSON-RPC request line. Kept separate so malformed protocol input
+/// can be fuzzed without constructing a database-backed server.
+pub fn parse_jsonrpc_request(line: &str) -> Option<Value> {
+    serde_json::from_str(line).ok()
+}
+
 impl KoalaServer {
     async fn handle_request(&self, request: Value) -> Value {
         let id = request.get("id").cloned().unwrap_or(json!(null));
@@ -66,9 +72,9 @@ pub async fn run_stdio(brain: Koala) -> Result<()> {
             continue;
         }
 
-        let request: serde_json::Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let request = match parse_jsonrpc_request(line) {
+            Some(request) => request,
+            None => continue,
         };
 
         let response = server.handle_request(request).await;
