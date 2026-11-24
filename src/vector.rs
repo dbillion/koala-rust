@@ -245,11 +245,10 @@ impl VectorEngine {
         // `filter` is a literal keyword, not a SQL expression. Keep it bound
         // so callers cannot inject predicates or alter the query structure.
         let keyword = filter.map(str::trim).filter(|value| !value.is_empty());
-        let mut query = QueryBuilder::<Sqlite>::new("SELECT rowid as id, distance as score, ");
-        query
-            .push_bind(keyword.unwrap_or_default())
-            .push(" as metadata FROM fact_embeddings WHERE embedding MATCH ")
-            .push_bind(query_json);
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT rowid as id, distance as score, '{}' as metadata FROM fact_embeddings WHERE embedding MATCH ",
+        );
+        query.push_bind(query_json);
         if let Some(keyword) = keyword {
             query
                 .push(" AND rowid IN (SELECT rowid FROM facts WHERE is_current = 1 AND (expires_at IS NULL OR datetime(expires_at) > CURRENT_TIMESTAMP) AND (instr(lower(name), lower(")
