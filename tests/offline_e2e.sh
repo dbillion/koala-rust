@@ -15,48 +15,39 @@ if [[ ! -f "$KOALA_VEC0_PATH" ]]; then
 fi
 
 tmp="$(mktemp -d)"
-network_isolation="namespace"
-firewall_rule="koala-offline-e2e"
+network_namespace=()
 
 cleanup() {
-  if [[ "$network_isolation" == "firewall" ]]; then
-    sudo -n iptables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
-    sudo -n ip6tables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
-  fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
 
-# GitHub-hosted runners may disable unprivileged user namespaces. Prefer a
-# network namespace; fall back to a temporary OUTPUT firewall rule when sudo
-# is available so this test still enforces an OS-level network boundary.
-if ! unshare -Urn true >/dev/null 2>&1; then
-  if command -v sudo >/dev/null 2>&1 && \
-    sudo -n iptables -I OUTPUT -m comment --comment "$firewall_rule" -j DROP; then
-    network_isolation="firewall"
-    if ! sudo -n ip6tables -I OUTPUT -m comment --comment "$firewall_rule" -j DROP; then
-      sudo -n iptables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
-      network_isolation="namespace"
-      echo "Cannot establish IPv6 firewall isolation" >&2
-      exit 77
-    fi
-  else
-    echo "Cannot establish network isolation (unshare and firewall unavailable)" >&2
-    exit 77
-  fi
+# Never alter the host firewall to simulate an air gap. Prefer an unprivileged
+# user+network namespace; if the runner disables user namespaces, use sudo only
+# to create a dedicated network namespace and drop back to the invoking UID/GID
+# before executing the Koala binary.
+if unshare -Urn true >/dev/null 2>&1; then
+  network_namespace=(unshare -Urn)
+  echo "Using an unprivileged network namespace"
+elif command -v sudo >/dev/null 2>&1 && command -v setpriv >/dev/null 2>&1 && sudo -n unshare -n true >/dev/null 2>&1; then
+  network_namespace=(
+    sudo -n unshare -n --
+    setpriv --reuid="$(id -u)" --regid="$(id -g)" --clear-groups
+  )
+  echo "Using a privileged isolated network namespace"
+else
+  echo "Cannot establish network isolation; refusing to run the offline test" >&2
+  exit 77
 fi
+
 export KOALA_MODEL_DIR KOALA_VEC0_PATH
 export KOALA_STATE_DIR="$tmp/state"
 mkdir -p "$KOALA_STATE_DIR"
 
 run_offline() {
   # --state-dir is explicit so the test never touches a developer's real state.
-  # The selected namespace or firewall blocks all network traffic at OS level.
-  if [[ "$network_isolation" == "namespace" ]]; then
-    unshare -Urn "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
-  else
-    "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
-  fi
+  # The selected network namespace blocks all network traffic at OS level.
+  "${network_namespace[@]}" "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
 }
 
 run_offline remember \
