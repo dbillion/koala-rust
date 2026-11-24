@@ -55,7 +55,7 @@ jobs:
           </body>
           </html>
           EOF
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-docs
           path: target/doc
@@ -104,7 +104,7 @@ jobs:
           </body>
           </html>
           EOF
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: architecture-docs
           path: docs/architecture
@@ -175,7 +175,7 @@ jobs:
           The full Rust crate documentation is available at [API Reference](../api/).
           EOF
           cd docs/book && mdbook build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mdbook-docs
           path: docs/book/book
