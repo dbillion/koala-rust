@@ -98,7 +98,7 @@ jobs:
 
     steps:
       - name: Checkout resolved commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.resolve-tag.outputs.commit_sha }}
@@ -264,7 +264,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout resolved commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.resolve-tag.outputs.commit_sha }}
@@ -520,7 +520,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ vars.PUBLISH_TO_CRATES_IO == 'true' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ needs.resolve-tag.outputs.commit_sha }}
