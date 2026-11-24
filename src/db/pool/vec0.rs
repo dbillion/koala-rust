@@ -1,3 +1,4 @@
+use sqlx::sqlite::SqliteConnectOptions;
 use std::path::{Path, PathBuf};
 
 /// Path of the sqlite-vec extension. Override with env KOALA_VEC0_PATH.
@@ -47,6 +48,13 @@ pub fn vec0_path() -> String {
             .to_string_lossy()
             .to_string()
     }
+}
+
+/// Attach the trusted sqlite-vec extension to SQLite connection options.
+pub(super) fn with_vec0_extension(options: SqliteConnectOptions) -> SqliteConnectOptions {
+    // SAFETY: SQLite extensions execute native code. `vec0_path` resolves to
+    // the bundled library or an operator-trusted KOALA_VEC0_PATH override.
+    unsafe { options.extension_with_entrypoint(vec0_path(), "sqlite3_vec_init") }
 }
 
 #[cfg(test)]
