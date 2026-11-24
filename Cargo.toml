@@ -44,7 +44,7 @@ wasmtime = "36.0.19"
 libloading = { version = "0.8", optional = true }
 
 # Utilities
-dashmap = "5.0"
+dashmap = "6.2"
 parking_lot = "0.12"
 tracing = "0.1"
 base64 = "0.22"
