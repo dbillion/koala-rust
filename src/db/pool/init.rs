@@ -33,9 +33,14 @@ impl Database {
             }
             connect_opts = connect_opts.pragma("key", format!("'{}'", key.replace('\'', "''")));
         }
-        connect_opts = connect_opts
-            .pragma("secure_delete", "ON")
-            .extension_with_entrypoint(vec0_path(), "sqlite3_vec_init");
+        connect_opts = connect_opts.pragma("secure_delete", "ON");
+        let extension_path = vec0_path();
+        // SAFETY: SQLite extensions are native code. `vec0_path` selects the
+        // bundled sqlite-vec library or an explicit operator-controlled
+        // KOALA_VEC0_PATH override; deployments must only point it at a
+        // trusted, matching sqlite-vec build. The entry point is fixed.
+        connect_opts =
+            unsafe { connect_opts.extension_with_entrypoint(extension_path, "sqlite3_vec_init") };
         let pool = SqlitePool::connect_with(connect_opts).await?;
 
         let db = Self { pool };

@@ -27,7 +27,7 @@ thiserror = "1.0"
 clap = { version = "4.0", features = ["derive", "env"] }
 dirs = "5.0"
 sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
-libsqlite3-sys = { version = "0.39", optional = true, features = ["bundled-sqlcipher"] }
+libsqlite3-sys = { version = "0.40", optional = true, features = ["bundled-sqlcipher"] }
 ndarray = "0.16"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }

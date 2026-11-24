@@ -506,6 +506,7 @@ impl Koala {
             .await
     }
 
+    /// Search vector facts; `filter` is a literal keyword, never a SQL clause.
     pub async fn vector_search_facts(
         &self,
         query_embedding: &[f32],

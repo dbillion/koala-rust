@@ -6,7 +6,11 @@ impl Database {
     /// Execute raw SQL query
     pub async fn raw_sql(&self, query: &str) -> Result<Vec<serde_json::Value>> {
         use sqlx::{TypeInfo, ValueRef};
-        let rows = sqlx::query(query).fetch_all(&self.pool).await?;
+        // This is intentionally the raw-SQL API. The complete statement is
+        // supplied by the caller and is not composed with any other input.
+        let rows = sqlx::query(sqlx::AssertSqlSafe(query))
+            .fetch_all(&self.pool)
+            .await?;
         let mut results = Vec::new();
         for row in rows {
             let mut obj = serde_json::Map::new();

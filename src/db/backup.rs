@@ -16,7 +16,9 @@ impl Database {
         // query parameter. Quote it as a SQL string literal, escaping apostrophes.
         let filename = path.to_string_lossy().replace(char::from(39), "''");
         let statement = format!("VACUUM INTO '{}';", filename);
-        sqlx::raw_sql(&statement).execute(&self.pool).await?;
+        sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+            .execute(&self.pool)
+            .await?;
         if !path.is_file() {
             bail!(
                 "SQLite reported a successful backup but did not create {}",

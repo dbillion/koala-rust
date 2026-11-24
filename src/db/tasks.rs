@@ -1,6 +1,6 @@
 use super::{Database, Task};
 use anyhow::Result;
-use sqlx::Row;
+use sqlx::{QueryBuilder, Row, Sqlite};
 
 impl Database {
     // ===== TASKS =====
@@ -35,32 +35,28 @@ impl Database {
         search: Option<&str>,
         limit: i64,
     ) -> Result<Vec<Task>> {
-        let mut query = String::from("SELECT rowid, title, body, status, project, priority, created_at, updated_at FROM tasks WHERE 1=1");
-        if status.is_some() {
-            query.push_str(" AND status = ?");
-        }
-        if project.is_some() {
-            query.push_str(" AND project = ?");
-        }
-        if search.is_some() {
-            query.push_str(" AND (title LIKE ? OR body LIKE ?)");
-        }
-        query.push_str(" ORDER BY created_at DESC LIMIT ?");
-
-        let mut q = sqlx::query(&query);
+        let mut query = QueryBuilder::<Sqlite>::new(
+            "SELECT rowid, title, body, status, project, priority, created_at, updated_at FROM tasks WHERE 1=1",
+        );
         if let Some(s) = status {
-            q = q.bind(s);
+            query.push(" AND status = ").push_bind(s);
         }
         if let Some(p) = project {
-            q = q.bind(p);
+            query.push(" AND project = ").push_bind(p);
         }
         if let Some(s) = search {
-            q = q.bind(format!("%{}%", s));
-            q = q.bind(format!("%{}%", s));
+            query
+                .push(" AND (title LIKE ")
+                .push_bind(format!("%{}%", s))
+                .push(" OR body LIKE ")
+                .push_bind(format!("%{}%", s))
+                .push(")");
         }
-        q = q.bind(limit);
+        query
+            .push(" ORDER BY created_at DESC LIMIT ")
+            .push_bind(limit);
 
-        let rows = q.fetch_all(&self.pool).await?;
+        let rows = query.build().fetch_all(&self.pool).await?;
         Ok(rows
             .into_iter()
             .map(|r| Task {

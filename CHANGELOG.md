@@ -6,7 +6,9 @@ All notable changes to Koala are documented here.
 
 ### Build and release
 - Upgrade SQLx and SQLite bindings to patched releases; raise MSRV to Rust 1.94.
+- Upgrade bundled SQLCipher to 4.20.0 with the patched SQLite amalgamation.
 - Remove unused legacy dependencies that pulled vulnerable crypto crates into the lockfile.
+- Bind dynamic SQL values with QueryBuilder, restrict vector filters to literal keywords, and document the trusted sqlite-vec loading boundary.
 - Bound SQL fuzz inputs and enforce network isolation in offline integration tests.
 - Correct release verification to expect all 28 generated assets.
 
