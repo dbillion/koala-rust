@@ -76,25 +76,25 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: koala-rust-x86_64-unknown-linux-gnu
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
             artifact: koala-rust-aarch64-unknown-linux-gnu
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           # macOS
           - target: x86_64-apple-darwin
             os: macos-15-intel
             artifact: koala-rust-x86_64-apple-darwin
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: koala-rust-aarch64-apple-darwin
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact: koala-rust-x86_64-pc-windows-msvc.exe
-            rust_toolchain: "1.91.0"
+            rust_toolchain: "1.94.0"
 
     steps:
       - name: Checkout resolved commit
@@ -492,8 +492,8 @@ jobs:
         run: |
           set -euo pipefail
           asset_count="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
-          if [[ "$asset_count" -ne 18 ]]; then
-            echo "Expected 18 release assets, found $asset_count" >&2
+          if [[ "$asset_count" -ne 28 ]]; then
+            echo "Expected 28 release assets, found $asset_count" >&2
             exit 1
           fi
           download_dir="$(mktemp -d)"

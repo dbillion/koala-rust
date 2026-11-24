@@ -9,7 +9,7 @@
   <a href="https://github.com/dbillion/koala-rust/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/dbillion/koala-rust"></a>
   <a href="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/dbillion/koala-rust/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-orange.svg">
+  <img alt="Rust 1.94+" src="https://img.shields.io/badge/rust-1.94%2B-orange.svg">
   <a href="https://github.com/dbillion/koala-rust/labels/good%20first%20issue"><img alt="Good first issues" src="https://img.shields.io/github/issues/dbillion/koala-rust/good%20first%20issue?label=good%20first%20issues&color=7057ff"></a>
   <a href="https://github.com/dbillion/koala-rust/labels/help%20wanted"><img alt="Help wanted" src="https://img.shields.io/github/issues/dbillion/koala-rust/help%20wanted?label=help%20wanted&color=008672"></a>
 </p>
@@ -568,7 +568,7 @@ After restart, agents get 3 tools:
 
 ### Prerequisites
 
-- Rust 1.91+ (MSRV)
+- Rust 1.94+ (MSRV)
 - `sqlite3` dev headers
 - `pkg-config`
 

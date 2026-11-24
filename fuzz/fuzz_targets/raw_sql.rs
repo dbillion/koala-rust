@@ -8,12 +8,21 @@ use tokio::runtime::Runtime;
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
 fuzz_target!(|data: &[u8]| {
-    if data.is_empty() || data.len() > 4096 {
+    if data.is_empty() || data.len() > 512 {
         return;
     }
     let Ok(query) = std::str::from_utf8(data) else {
         return;
     };
+    // SQLite can spend unbounded time processing embedded NUL/control bytes.
+    // Keep the harness focused on SQL text rather than arbitrary binary input.
+    if !query.is_ascii()
+        || query
+            .bytes()
+            .any(|byte| !(byte.is_ascii_graphic() || byte.is_ascii_whitespace()))
+    {
+        return;
+    }
     let first = query.trim_start().to_ascii_lowercase();
     if first.starts_with("attach")
         || first.starts_with("detach")

@@ -15,16 +15,48 @@ if [[ ! -f "$KOALA_VEC0_PATH" ]]; then
 fi
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+network_isolation="namespace"
+firewall_rule="koala-offline-e2e"
+
+cleanup() {
+  if [[ "$network_isolation" == "firewall" ]]; then
+    sudo -n iptables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
+    sudo -n ip6tables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
+  fi
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+# GitHub-hosted runners may disable unprivileged user namespaces. Prefer a
+# network namespace; fall back to a temporary OUTPUT firewall rule when sudo
+# is available so this test still enforces an OS-level network boundary.
+if ! unshare -Urn true >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1 && \
+    sudo -n iptables -I OUTPUT -m comment --comment "$firewall_rule" -j DROP; then
+    network_isolation="firewall"
+    if ! sudo -n ip6tables -I OUTPUT -m comment --comment "$firewall_rule" -j DROP; then
+      sudo -n iptables -D OUTPUT -m comment --comment "$firewall_rule" -j DROP || true
+      network_isolation="namespace"
+      echo "Cannot establish IPv6 firewall isolation" >&2
+      exit 77
+    fi
+  else
+    echo "Cannot establish network isolation (unshare and firewall unavailable)" >&2
+    exit 77
+  fi
+fi
 export KOALA_MODEL_DIR KOALA_VEC0_PATH
 export KOALA_STATE_DIR="$tmp/state"
 mkdir -p "$KOALA_STATE_DIR"
 
 run_offline() {
   # --state-dir is explicit so the test never touches a developer's real state.
-  # The user+network namespace provides an OS-level no-network boundary; the
-  # no-default-features binary also omits runtime HTTP clients.
-  unshare -Urn "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
+  # The selected namespace or firewall blocks all network traffic at OS level.
+  if [[ "$network_isolation" == "namespace" ]]; then
+    unshare -Urn "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
+  else
+    "$KOALA_BIN" --offline --state-dir "$KOALA_STATE_DIR" --format json "$@"
+  fi
 }
 
 run_offline remember \

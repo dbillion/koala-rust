@@ -2,6 +2,14 @@
 
 All notable changes to Koala are documented here.
 
+## Unreleased
+
+### Build and release
+- Upgrade SQLx and SQLite bindings to patched releases; raise MSRV to Rust 1.94.
+- Remove unused legacy dependencies that pulled vulnerable crypto crates into the lockfile.
+- Bound SQL fuzz inputs and enforce network isolation in offline integration tests.
+- Correct release verification to expect all 28 generated assets.
+
 ## v0.3.4 - 2026-11-22
 
 ### Fixed

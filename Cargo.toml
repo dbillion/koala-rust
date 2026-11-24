@@ -10,7 +10,7 @@ keywords = ["mcp", "memory", "sqlite", "crdt", "wasm"]
 categories = ["command-line-utilities", "database", "embedded", "wasm"]
 readme = "README.md"
 include = ["src/**/*", "Cargo.toml", "README.md", "LICENSE", "build.rs", "plugins/**/*"]
-rust-version = "1.91"
+rust-version = "1.94"
 
 [features]
 default = ["net"]
@@ -25,10 +25,9 @@ tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 thiserror = "1.0"
 clap = { version = "4.0", features = ["derive", "env"] }
-clap-mcp = "0.1"
 dirs = "5.0"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
-libsqlite3-sys = { version = "0.30", optional = true, features = ["bundled-sqlcipher"] }
+sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
+libsqlite3-sys = { version = "0.39", optional = true, features = ["bundled-sqlcipher"] }
 ndarray = "0.16"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -36,12 +35,9 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # v0.2: Vector search (sqlite-vec extension loaded at runtime)
 # v0.3: Multi-agent sync (CRDT)
-automerge = "0.3"
-automerge_repo = "0.1"
 
 # v0.4: Real Embeddings (Model2Vec - static token lookup, no neural net)
 model2vec-rs = { version = "0.4", default-features = false, features = ["onig"] }
-tokenizers = "0.19"
 
 # v0.5: Plugin system
 wasmtime = "36.0.19"
@@ -51,7 +47,6 @@ libloading = { version = "0.8", optional = true }
 dashmap = "5.0"
 parking_lot = "0.12"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)

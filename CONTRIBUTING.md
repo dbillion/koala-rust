@@ -11,7 +11,7 @@ Thanks for helping. People of every experience level are welcome here.
 
 ## Set up in five minutes
 
-You need Rust 1.91 or newer.
+You need Rust 1.94 or newer.
 
 ```sh
 git clone https://github.com/dbillion/koala-rust
