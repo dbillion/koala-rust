@@ -247,6 +247,20 @@ jobs:
           done
           echo "::error::Pages artifact $EXPECTED_ARTIFACT was uploaded but never became visible to the deployment API" >&2
           exit 1
-      - uses: actions/deploy-pages@v5
+      # deploy-pages can still miss a brand-new artifact for a few seconds, even after the
+      # REST list above shows it (seen in run 45371151536). It fails before it creates a
+      # deployment, so one retry after a short pause is safe.
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
+      - name: Pause before retrying the deploy
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 30
+      - name: Deploy to GitHub Pages (retry)
+        if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v5
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
