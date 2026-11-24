@@ -47,7 +47,7 @@ libloading = { version = "0.8", optional = true }
 dashmap = "5.0"
 parking_lot = "0.12"
 tracing = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)
 reqwest = { version = "0.12", optional = true, features = ["json", "native-tls-vendored"] }
