@@ -23,12 +23,12 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 clap = { version = "4.0", features = ["derive", "env"] }
 dirs = "5.0"
 sqlx = { version = "0.9.1", features = ["runtime-tokio", "sqlite", "json", "uuid", "chrono"] }
 libsqlite3-sys = { version = "0.40", optional = true, features = ["bundled-sqlcipher"] }
-ndarray = "0.16"
+ndarray = "0.17"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -44,10 +44,10 @@ wasmtime = "36.0.19"
 libloading = { version = "0.8", optional = true }
 
 # Utilities
-dashmap = "5.0"
+dashmap = "6.2"
 parking_lot = "0.12"
 tracing = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)
 reqwest = { version = "0.12", optional = true, features = ["json", "native-tls-vendored"] }
