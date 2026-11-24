@@ -244,6 +244,6 @@ jobs:
           done
           echo "::error::Pages artifact $EXPECTED_ARTIFACT was uploaded but never became visible to the deployment API" >&2
           exit 1
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         with:
           artifact_name: github-pages-${{ github.run_attempt }}
