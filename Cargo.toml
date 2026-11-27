@@ -48,6 +48,8 @@ dashmap = "6.2"
 parking_lot = "0.12"
 tracing = "0.1"
 base64 = "0.23"
+tempfile = "3.8"
+
 
 # v0.5: Plugin marketplace (needed on all targets, including Windows)
 reqwest = { version = "0.12", optional = true, features = ["json", "native-tls-vendored"] }
